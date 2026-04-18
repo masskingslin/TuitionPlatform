@@ -35,7 +35,6 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun TeacherAppRouter() {
-    // This state controls which screen the teacher sees
     var isLoggedIn by remember { mutableStateOf(false) }
 
     if (isLoggedIn) {
@@ -56,7 +55,7 @@ fun TeacherLoginScreen(onLoginSuccess: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "Teacher Portal",
+            text = "Teacher Admin Portal",
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.padding(bottom = 32.dp)
         )
@@ -80,7 +79,8 @@ fun TeacherLoginScreen(onLoginSuccess: () -> Unit) {
 
         Button(
             onClick = { 
-                // TODO: Connect to Node.js API to verify credentials
+                // Placeholder: Secure API Login will trigger here
+                println("API Request -> Attempting Admin Login")
                 onLoginSuccess() 
             },
             modifier = Modifier.fillMaxWidth().height(50.dp)
@@ -93,7 +93,7 @@ fun TeacherLoginScreen(onLoginSuccess: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TeacherDashboardScreen(onLogout: () -> Unit) {
-    // Mock data: Later this will be fetched from your MongoDB database
+    // Placeholder data representing the MongoDB fetch
     val mockStudents = listOf(
         "Rahul Kumar" to "9876543210",
         "Priya Sharma" to "9123456789",
@@ -109,14 +109,16 @@ fun TeacherDashboardScreen(onLogout: () -> Unit) {
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ),
                 actions = {
-                    TextButton(onClick = onLogout) {
+                    TextButton(onClick = {
+                        println("API Request -> Invalidating JWT Cache")
+                        onLogout()
+                    }) {
                         Text("Logout")
                     }
                 }
             )
         }
     ) { paddingValues ->
-        // LazyColumn is highly memory-efficient for scrolling long lists
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -127,8 +129,8 @@ fun TeacherDashboardScreen(onLogout: () -> Unit) {
                 StudentListItem(
                     name = student.first,
                     phone = student.second,
-                    onEdit = { println("API Call -> Edit ${student.first}") },
-                    onDelete = { println("API Call -> Delete ${student.first}") }
+                    onEdit = { println("API Request -> Admin Editing ${student.first}") },
+                    onDelete = { println("API Request -> Admin Deleting ${student.first}") }
                 )
             }
         }
@@ -163,7 +165,11 @@ fun StudentListItem(name: String, phone: String, onEdit: () -> Unit, onDelete: (
                     Icon(imageVector = Icons.Default.Edit, contentDescription = "Edit Student")
                 }
                 IconButton(onClick = onDelete) {
-                    Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete Student", tint = MaterialTheme.colorScheme.error)
+                    Icon(
+                        imageVector = Icons.Default.Delete, 
+                        contentDescription = "Delete Student", 
+                        tint = MaterialTheme.colorScheme.error
+                    )
                 }
             }
         }
