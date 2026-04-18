@@ -1,0 +1,39 @@
+package com.tuition.core.network
+
+import retrofit2.Response
+import retrofit2.http.Body
+import retrofit2.http.DELETE
+import retrofit2.http.Header
+import retrofit2.http.POST
+import retrofit2.http.PUT
+import retrofit2.http.Path
+
+interface ApiService {
+    
+    // --- STUDENT AUTHENTICATION ---
+    @POST("/api/auth/register")
+    suspend fun registerStudent(
+        @Body request: AuthRequest
+    ): Response<AuthResponse>
+
+    @POST("/api/auth/login")
+    suspend fun login(
+        @Body request: AuthRequest
+    ): Response<AuthResponse>
+
+    // --- TEACHER ADMINISTRATIVE CONTROLS ---
+    // The @Header annotation sends the Teacher's secure JWT token
+    
+    @PUT("/api/admin/students/{studentId}")
+    suspend fun editStudent(
+        @Header("Authorization") token: String,
+        @Path("studentId") studentId: String,
+        @Body request: EditStudentRequest
+    ): Response<GenericResponse>
+
+    @DELETE("/api/admin/students/{studentId}")
+    suspend fun removeStudent(
+        @Header("Authorization") token: String,
+        @Path("studentId") studentId: String
+    ): Response<GenericResponse>
+}
