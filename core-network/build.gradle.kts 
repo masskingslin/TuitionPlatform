@@ -1,0 +1,9 @@
+android {
+    namespace = "com.tuition.core.network"
+    compileSdk = 34
+    defaultConfig { minSdk = 24 }
+    
+    buildFeatures {
+        buildConfig = true // Enables hiding variables
+    }
+}
