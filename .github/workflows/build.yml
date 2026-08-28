@@ -22,20 +22,13 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: Setup Gradle Wrapper
+        run: |
+          if [ ! -f "gradlew" ]; then
+            echo "gradlew not found. Generating Gradle 8.9 wrapper..."
+            gradle wrapper --gradle-version 8.9
+          fi
+          chmod +x gradlew
 
-      - name: Build Student and Teacher Debug APKs
+      - name: Build Debug APKs
         run: ./gradlew :app-student:assembleDebug :app-teacher:assembleDebug --stacktrace
-
-      - name: Upload Student APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-student-debug
-          path: app-student/build/outputs/apk/debug/*.apk
-
-      - name: Upload Teacher APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-teacher-debug
-          path: app-teacher/build/outputs/apk/debug/*.apk
