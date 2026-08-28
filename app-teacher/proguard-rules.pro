@@ -1,5 +1,9 @@
-# Tuition Platform Proguard Rules
--keep class com.tuition.core.network.** { *; }
+# Retrofit & OkHttp rules
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn retrofit2.**
+-keep class retrofit2.** { *; }
+
+# Serialization models
 -keepclassmembers class com.tuition.core.network.** { *; }
--keepattributes Signature
--keepattributes *Annotation*
+-keep class com.tuition.core.network.** { *; }
