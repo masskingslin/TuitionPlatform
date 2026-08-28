@@ -20,10 +20,17 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
 
-      - name: Grant Execute Permission to Gradlew
-        run: chmod +x gradlew || true
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Ensure Gradle Wrapper & Permissions
+        run: |
+          if [ ! -f "gradlew" ]; then
+            echo "Gradle wrapper not found in repo. Generating wrapper..."
+            gradle wrapper
+          fi
+          chmod +x gradlew
 
       - name: Build Core Network & Assemble APKs
         run: ./gradlew :core-network:assembleRelease :app-student:assembleDebug :app-teacher:assembleDebug --stacktrace
