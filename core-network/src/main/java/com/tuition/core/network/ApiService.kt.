@@ -1,102 +1,100 @@
 package com.tuition.core.network
 
+import kotlinx.serialization.json.Json
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
-import retrofit2.Response
 import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
-import retrofit2.http.*
+import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import retrofit2.http.Body
+import retrofit2.http.GET
+import retrofit2.http.Header
+import retrofit2.http.POST
+import retrofit2.http.Path
+import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
 
-interface ApiService {
+interface TuitionApiService {
 
-    // Classes / Courses
-    @GET("api/v1/classes")
-    suspend fun getAvailableClasses(
-        @Query("subject") subject: String? = null,
-        @Query("grade") grade: String? = null
-    ): Response<List<TuitionClass>>
+    // Auth
+    @POST("api/v1/auth/login")
+    suspend fun login(@Body request: AuthRequest): AuthResponse
 
-    @GET("api/v1/classes/{id}")
-    suspend fun getClassById(@Path("id") id: String): Response<TuitionClass>
+    // Student Endpoints
+    @GET("api/v1/student/profile")
+    suspend fun getStudentProfile(@Header("Authorization") token: String): StudentProfile
 
-    @POST("api/v1/classes")
-    suspend fun createClass(@Body tuitionClass: TuitionClass): Response<TuitionClass>
+    @GET("api/v1/student/batches")
+    suspend fun getStudentBatches(@Header("Authorization") token: String): List<CourseBatch>
 
-    @DELETE("api/v1/classes/{id}")
-    suspend fun deleteClass(@Path("id") id: String): Response<Unit>
+    @GET("api/v1/student/attendance")
+    suspend fun getStudentAttendance(
+        @Header("Authorization") token: String,
+        @Query("batchId") batchId: String? = null
+    ): List<AttendanceRecord>
 
-    // Bookings & Enrollments
-    @POST("api/v1/bookings")
-    suspend fun createBooking(@Body booking: Booking): Response<Booking>
+    @GET("api/v1/student/assignments")
+    suspend fun getStudentAssignments(@Header("Authorization") token: String): List<Assignment>
 
-    @GET("api/v1/bookings/student/{studentId}")
-    suspend fun getStudentBookings(@Path("studentId") studentId: String): Response<List<Booking>>
+    @GET("api/v1/student/fees")
+    suspend fun getStudentFees(@Header("Authorization") token: String): List<FeeRecord>
 
-    @GET("api/v1/bookings/teacher/{teacherId}")
-    suspend fun getTeacherBookings(@Path("teacherId") teacherId: String): Response<List<Booking>>
+    // Teacher Endpoints
+    @GET("api/v1/teacher/profile")
+    suspend fun getTeacherProfile(@Header("Authorization") token: String): TeacherProfile
 
-    @PATCH("api/v1/bookings/{id}/status")
-    suspend fun updateBookingStatus(
-        @Path("id") id: String,
-        @Query("status") status: String
-    ): Response<Booking>
+    @GET("api/v1/teacher/batches")
+    suspend fun getTeacherBatches(@Header("Authorization") token: String): List<CourseBatch>
 
-    // Assignments
-    @GET("api/v1/classes/{classId}/assignments")
-    suspend fun getAssignments(@Path("classId") classId: String): Response<List<Assignment>>
+    @GET("api/v1/teacher/students")
+    suspend fun getBatchStudents(
+        @Header("Authorization") token: String,
+        @Query("batchId") batchId: String
+    ): List<StudentProfile>
 
-    @POST("api/v1/classes/{classId}/assignments")
+    @POST("api/v1/teacher/attendance/submit")
+    suspend fun submitBatchAttendance(
+        @Header("Authorization") token: String,
+        @Body request: MarkAttendanceRequest
+    ): Boolean
+
+    @POST("api/v1/teacher/assignments/create")
     suspend fun createAssignment(
-        @Path("classId") classId: String,
+        @Header("Authorization") token: String,
         @Body assignment: Assignment
-    ): Response<Assignment>
+    ): Assignment
 
-    // Submissions
-    @POST("api/v1/assignments/{assignmentId}/submit")
-    suspend fun submitAssignment(
-        @Path("assignmentId") assignmentId: String,
-        @Body submission: Submission
-    ): Response<Submission>
+    @GET("api/v1/teacher/fees/overview")
+    suspend fun getTeacherBatchFeeOverview(@Header("Authorization") token: String): List<FeeRecord>
 
-    @GET("api/v1/assignments/{assignmentId}/submissions")
-    suspend fun getSubmissions(@Path("assignmentId") assignmentId: String): Response<List<Submission>>
-
-    @PATCH("api/v1/submissions/{submissionId}/grade")
-    suspend fun gradeSubmission(
-        @Path("submissionId") submissionId: String,
-        @Query("score") score: Int,
-        @Query("feedback") feedback: String
-    ): Response<Submission>
-
-    // Attendance
-    @POST("api/v1/classes/{classId}/attendance")
-    suspend fun submitAttendance(
-        @Path("classId") classId: String,
-        @Body records: List<AttendanceRecord>
-    ): Response<Unit>
+    // Shared Announcements
+    @GET("api/v1/announcements")
+    suspend fun getAnnouncements(@Header("Authorization") token: String): List<Announcement>
 }
 
-object TuitionApiClient {
+object NetworkClient {
     private const val BASE_URL = "https://api.tuitionplatform.internal/"
 
-    fun create(baseUrl: String = BASE_URL): ApiService {
-        val loggingInterceptor = HttpLoggingInterceptor().apply {
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        encodeDefaults = true
+    }
+
+    private val okHttpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .addInterceptor(HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BODY
-        }
+        })
+        .build()
 
-        val okHttpClient = OkHttpClient.Builder()
-            .addInterceptor(loggingInterceptor)
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
-            .build()
-
-        return Retrofit.Builder()
-            .baseUrl(baseUrl)
+    val apiService: TuitionApiService by lazy {
+        Retrofit.Builder()
+            .baseUrl(BASE_URL)
             .client(okHttpClient)
-            .addConverterFactory(GsonConverterFactory.create())
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
-            .create(ApiService::class.java)
+            .create(TuitionApiService::class.java)
     }
 }
