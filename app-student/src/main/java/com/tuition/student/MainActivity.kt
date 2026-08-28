@@ -1,18 +1,13 @@
 package com.tuition.student
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -20,121 +15,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tuition.core.network.*
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-
-class StudentViewModel : ViewModel() {
-    private val _batches = MutableStateFlow<List<TuitionBatch>>(emptyList())
-    val batches: StateFlow<List<TuitionBatch>> = _batches.asStateFlow()
-
-    private val _assignments = MutableStateFlow<List<Assignment>>(emptyList())
-    val assignments: StateFlow<List<Assignment>> = _assignments.asStateFlow()
-
-    private val _announcements = MutableStateFlow<List<Announcement>>(emptyList())
-    val announcements: StateFlow<List<Announcement>> = _announcements.asStateFlow()
-
-    private val _attendancePercentage = MutableStateFlow(92)
-    val attendancePercentage: StateFlow<Int> = _attendancePercentage.asStateFlow()
-
-    init {
-        loadMockData()
-    }
-
-    private fun loadMockData() {
-        _batches.value = listOf(
-            TuitionBatch(
-                id = "b1",
-                title = "Class 10 - Advanced Mathematics",
-                subject = "Mathematics",
-                grade = "Grade 10",
-                teacherName = "Mr. Kingslin",
-                scheduleTime = "Mon, Wed, Fri - 5:30 PM",
-                monthlyFee = 1500.0,
-                enrolledStudents = 24,
-                meetingUrl = "https://meet.google.com/abc-defg-hij",
-                isLiveNow = true
-            ),
-            TuitionBatch(
-                id = "b2",
-                title = "Class 10 - Physics & Chemistry",
-                subject = "Science",
-                grade = "Grade 10",
-                teacherName = "Dr. Johnson",
-                scheduleTime = "Tue, Thu, Sat - 6:00 PM",
-                monthlyFee = 1800.0,
-                enrolledStudents = 18,
-                isLiveNow = false
-            )
-        )
-
-        _assignments = MutableStateFlow(
-            listOf(
-                Assignment(
-                    id = "a1",
-                    batchId = "b1",
-                    title = "Quadratic Equations Problem Set 4",
-                    description = "Solve all questions from Exercise 4.2 in your notebook and upload clear photos.",
-                    dueDate = "Tomorrow, 8:00 PM",
-                    totalMarks = 50,
-                    status = SubmissionStatus.PENDING
-                ),
-                Assignment(
-                    id = "a2",
-                    batchId = "b2",
-                    title = "Refraction of Light - Ray Diagrams",
-                    description = "Draw concave and convex lens focal points with exact measurements.",
-                    dueDate = "Completed",
-                    totalMarks = 25,
-                    status = SubmissionStatus.GRADED,
-                    obtainedMarks = 24,
-                    teacherFeedback = "Excellent ray tracing! Neat labeling."
-                )
-            )
-        )
-
-        _announcements.value = listOf(
-            Announcement(
-                id = "an1",
-                batchId = "b1",
-                authorName = "Mr. Kingslin",
-                title = "Special Revision Class this Sunday",
-                content = "We will cover Trigonometric Identities from 10:00 AM to 12:30 PM. Please be on time.",
-                timestamp = "Today, 10:30 AM",
-                isHighPriority = true
-            )
-        )
-    }
-
-    fun submitHomework(assignmentId: String, content: String) {
-        viewModelScope.launch {
-            _assignments.value = _assignments.value.map {
-                if (it.id == assignmentId) {
-                    it.copy(status = SubmissionStatus.SUBMITTED)
-                } else it
-            }
-        }
-    }
-}
-
-sealed class StudentScreen(val title: String, val icon: ImageVector) {
-    object Home : StudentScreen("Home", Icons.Default.Home)
-    object Batches : StudentScreen("Batches", Icons.Default.MenuBook)
-    object Homework : StudentScreen("Homework", Icons.Default.Assignment)
-    object Attendance : StudentScreen("Attendance", Icons.Default.EventAvailable)
-}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -143,95 +29,77 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(
                 colorScheme = lightColorScheme(
                     primary = Color(0xFF1E88E5),
-                    primaryContainer = Color(0xFFE3F2FD),
-                    secondary = Color(0xFF00897B),
-                    surface = Color(0xFFFBFBFE)
+                    secondary = Color(0xFF26A69A),
+                    background = Color(0xFFF8F9FA),
+                    surface = Color.White
                 )
             ) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.surface
-                ) {
-                    val viewModel: StudentViewModel = viewModel()
-                    StudentMainScreen(viewModel)
-                }
+                StudentAppRoot()
             }
         }
     }
+}
+
+enum class StudentNavScreen(val title: String, val icon: ImageVector) {
+    DASHBOARD("Dashboard", Icons.Default.Dashboard),
+    ATTENDANCE("Attendance", Icons.Default.FactCheck),
+    ASSIGNMENTS("Assignments", Icons.Default.Assignment),
+    FEES("Fees", Icons.Default.Payment)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StudentMainScreen(viewModel: StudentViewModel) {
-    var selectedScreen by remember { mutableStateOf<StudentScreen>(StudentScreen.Home) }
+fun StudentAppRoot() {
+    var selectedScreen by remember { mutableStateOf(StudentNavScreen.DASHBOARD) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = "Tuition Platform",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp
-                        )
-                        Text(
-                            text = "Student Portal",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { /* Notifications */ }) {
-                        Icon(Icons.Default.Notifications, contentDescription = "Alerts")
-                    }
-                },
+                title = { Text(selectedScreen.title, fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    titleContentColor = Color.White
                 )
             )
         },
         bottomBar = {
-            NavigationBar {
-                val screens = listOf(
-                    StudentScreen.Home,
-                    StudentScreen.Batches,
-                    StudentScreen.Homework,
-                    StudentScreen.Attendance
-                )
-                screens.forEach { screen ->
+            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                StudentNavScreen.values().forEach { screen ->
                     NavigationBarItem(
                         selected = selectedScreen == screen,
                         onClick = { selectedScreen = screen },
-                        label = { Text(screen.title) },
-                        icon = { Icon(screen.icon, contentDescription = screen.title) }
+                        icon = { Icon(screen.icon, contentDescription = screen.title) },
+                        label = { Text(screen.title) }
                     )
                 }
             }
         }
-    ) { innerPadding ->
+    ) { paddingValues ->
         Box(
             modifier = Modifier
-                .padding(innerPadding)
                 .fillMaxSize()
+                .padding(paddingValues)
+                .background(MaterialTheme.colorScheme.background)
         ) {
             when (selectedScreen) {
-                is StudentScreen.Home -> StudentHomeScreen(viewModel)
-                is StudentScreen.Batches -> StudentBatchesScreen(viewModel)
-                is StudentScreen.Homework -> StudentHomeworkScreen(viewModel)
-                is StudentScreen.Attendance -> StudentAttendanceScreen(viewModel)
+                StudentNavScreen.DASHBOARD -> StudentDashboardScreen()
+                StudentNavScreen.ATTENDANCE -> StudentAttendanceScreen()
+                StudentNavScreen.ASSIGNMENTS -> StudentAssignmentsScreen()
+                StudentNavScreen.FEES -> StudentFeeScreen()
             }
         }
     }
 }
 
 @Composable
-fun StudentHomeScreen(viewModel: StudentViewModel) {
-    val batches by viewModel.batches.collectAsState()
-    val announcements by viewModel.announcements.collectAsState()
-    val attendancePct by viewModel.attendancePercentage.collectAsState()
-    val context = LocalContext.current
+fun StudentDashboardScreen() {
+    val sampleBatches = remember {
+        listOf(
+            CourseBatch("b1", "Grade 10 Mathematics", "Math", "Mr. Kingslin", "05:00 PM - 06:30 PM", 18, "Room 101"),
+            CourseBatch("b2", "Physics Fundamentals", "Physics", "Dr. Wilson", "06:45 PM - 08:00 PM", 14, "Lab 2"),
+            CourseBatch("b3", "Chemistry & Reactions", "Chemistry", "Ms. Stella", "Tomorrow 04:00 PM", 12, "Room 104")
+        )
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -239,149 +107,115 @@ fun StudentHomeScreen(viewModel: StudentViewModel) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Quick Attendance & Stats Header
         item {
             Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Welcome back, Student!", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text("Class 10th - State Board Batch | Attendance: 94.5%", color = Color.White.copy(alpha = 0.9f))
+                }
+            }
+        }
+
+        item {
+            Text("Your Scheduled Classes", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        }
+
+        items(sampleBatches) { batch ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(2.dp)
             ) {
                 Row(
                     modifier = Modifier
-                        .padding(20.dp)
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(batch.title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text("Instructor: ${batch.teacherName}", color = Color.Gray, fontSize = 13.sp)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("Time: ${batch.scheduleTime}", color = MaterialTheme.colorScheme.secondary, fontSize = 13.sp)
+                    }
+                    Button(
+                        onClick = { /* Launch Live Session or View Details */ },
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Enter")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun StudentAttendanceScreen() {
+    val sampleRecords = remember {
+        listOf(
+            AttendanceRecord("a1", "b1", "s1", "Self", "2026-08-28", AttendanceStatus.PRESENT),
+            AttendanceRecord("a2", "b1", "s1", "Self", "2026-08-27", AttendanceStatus.PRESENT),
+            AttendanceRecord("a3", "b1", "s1", "Self", "2026-08-26", AttendanceStatus.LATE, notes = "Late by 10 mins"),
+            AttendanceRecord("a4", "b1", "s1", "Self", "2026-08-25", AttendanceStatus.ABSENT, notes = "Sick leave notified")
+        )
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9))
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Total Attendance Percentage", fontWeight = FontWeight.Medium)
+                    Text("92.8%", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32), fontSize = 18.sp)
+                }
+            }
+        }
+
+        items(sampleRecords) { record ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text(
-                            text = "Overall Attendance",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        Text(
-                            text = "$attendancePct%",
-                            fontSize = 32.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = Color(0xFF0D47A1)
-                        )
-                        Text(
-                            text = "Status: Excellent",
-                            fontSize = 12.sp,
-                            color = Color(0xFF2E7D32)
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF1976D2)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.School, contentDescription = null, tint = Color.White)
-                    }
-                }
-            }
-        }
-
-        // Live Class Alert
-        val liveBatch = batches.firstOrNull { it.isLiveNow }
-        if (liveBatch != null) {
-            item {
-                Card(
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .padding(16.dp)
-                            .fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(12.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.Red)
-                            )
-                            Column {
-                                Text(
-                                    text = "Class is Live Now!",
-                                    color = Color.Red,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
-                                Text(
-                                    text = liveBatch.title,
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 14.sp
-                                )
-                            }
-                        }
-
-                        Button(
-                            onClick = {
-                                liveBatch.meetingUrl?.let { url ->
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                    context.startActivity(intent)
-                                } ?: Toast.makeText(context, "No meeting URL provided", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text("Join")
+                        Text(record.date, fontWeight = FontWeight.Bold)
+                        if (record.notes.isNotBlank()) {
+                            Text(record.notes, fontSize = 12.sp, color = Color.Gray)
                         }
                     }
-                }
-            }
-        }
-
-        // Announcements Section
-        item {
-            Text(
-                text = "Announcements",
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp
-            )
-        }
-
-        items(announcements) { notice ->
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = notice.title,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
-                        )
-                        if (notice.isHighPriority) {
-                            Badge(containerColor = Color(0xFFD32F2F)) {
-                                Text("URGENT", color = Color.White, fontSize = 10.sp)
-                            }
-                        }
+                    val statusColor = when (record.status) {
+                        AttendanceStatus.PRESENT -> Color(0xFF2E7D32)
+                        AttendanceStatus.ABSENT -> Color(0xFFC62828)
+                        AttendanceStatus.LATE -> Color(0xFFEF6C00)
+                        AttendanceStatus.EXCUSED -> Color(0xFF1565C0)
                     }
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(text = notice.content, fontSize = 13.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Posted by ${notice.authorName} • ${notice.timestamp}",
-                        fontSize = 11.sp,
-                        color = Color.Gray
-                    )
+                    Text(record.status.name, color = statusColor, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -389,8 +223,14 @@ fun StudentHomeScreen(viewModel: StudentViewModel) {
 }
 
 @Composable
-fun StudentBatchesScreen(viewModel: StudentViewModel) {
-    val batches by viewModel.batches.collectAsState()
+fun StudentAssignmentsScreen() {
+    val assignments = remember {
+        listOf(
+            Assignment("as1", "b1", "Trigonometry Exercise 4.2", "Complete questions 1 to 15 with full derivations.", "Tomorrow, 11:59 PM", 25, false),
+            Assignment("as2", "b2", "Optics Ray Diagrams", "Draw convex and concave mirror reflections.", "2026-08-30", 20, true, 19),
+            Assignment("as3", "b3", "Chemical Equilibrium Worksheet", "Practice worksheet on Le Chatelier's principle.", "2026-09-02", 30, false)
+        )
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -398,55 +238,29 @@ fun StudentBatchesScreen(viewModel: StudentViewModel) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item {
-            Text(
-                text = "My Enrolled Batches",
-                fontWeight = FontWeight.Bold,
-                fontSize = 20.sp
-            )
-        }
-
-        items(batches) { batch ->
+        items(assignments) { item ->
             Card(
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(10.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
+                        Text(item.title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         Text(
-                            text = batch.title,
+                            if (item.isSubmitted) "Submitted (${item.scoreEarned}/${item.maxScore})" else "Pending",
+                            color = if (item.isSubmitted) Color(0xFF2E7D32) else Color(0xFFD32F2F),
                             fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
-                        )
-                        Text(
-                            text = "₹${batch.monthlyFee.toInt()}/mo",
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary
+                            fontSize = 13.sp
                         )
                     }
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(text = "Subject: ${batch.subject} (${batch.grade})", fontSize = 13.sp)
-                    Text(text = "Teacher: ${batch.teacherName}", fontSize = 13.sp)
+                    Text(item.description, color = Color.DarkGray, fontSize = 14.sp)
                     Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "🕒 ${batch.scheduleTime}",
-                            fontSize = 12.sp,
-                            color = Color.Gray
-                        )
-                        Text(
-                            text = "👥 ${batch.enrolledStudents}/${batch.maxCapacity} Students",
-                            fontSize = 12.sp,
-                            color = Color.Gray
-                        )
-                    }
+                    Text("Due: ${item.dueDate}", fontSize = 12.sp, color = Color.Gray)
                 }
             }
         }
@@ -454,11 +268,13 @@ fun StudentBatchesScreen(viewModel: StudentViewModel) {
 }
 
 @Composable
-fun StudentHomeworkScreen(viewModel: StudentViewModel) {
-    val assignments by viewModel.assignments.collectAsState()
-    var selectedAssignmentForSubmit by remember { mutableStateOf<Assignment?>(null) }
-    var submissionText by remember { mutableStateOf("") }
-    val context = LocalContext.current
+fun StudentFeeScreen() {
+    val fees = remember {
+        listOf(
+            FeeRecord("inv-08-26", "s1", "Self", "August 2026", 1500.0, 1500.0, FeePaymentStatus.PAID, "2026-08-10"),
+            FeeRecord("inv-09-26", "s1", "Self", "September 2026", 1500.0, 0.0, FeePaymentStatus.PENDING, "2026-09-10")
+        )
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -466,158 +282,29 @@ fun StudentHomeworkScreen(viewModel: StudentViewModel) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item {
-            Text(
-                text = "Homework & Assignments",
-                fontWeight = FontWeight.Bold,
-                fontSize = 20.sp
-            )
-        }
-
-        items(assignments) { assignment ->
+        items(fees) { fee ->
             Card(
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(10.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = assignment.title,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            modifier = Modifier.weight(1f)
-                        )
-                        when (assignment.status) {
-                            SubmissionStatus.PENDING -> Badge(containerColor = Color(0xFFFFA000)) { Text("PENDING") }
-                            SubmissionStatus.SUBMITTED -> Badge(containerColor = Color(0xFF1976D2)) { Text("SUBMITTED") }
-                            SubmissionStatus.GRADED -> Badge(containerColor = Color(0xFF388E3C)) { Text("GRADED") }
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(text = assignment.description, fontSize = 13.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Due: ${assignment.dueDate} • Total Marks: ${assignment.totalMarks}",
-                        fontSize = 12.sp,
-                        color = Color.Gray
-                    )
-
-if (assignment.status == SubmissionStatus.GRADED) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(8.dp)) {
-                                Text(
-                                    text = "Marks Scored: ${assignment.obtainedMarks} / ${assignment.totalMarks}",
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF2E7D32)
-                                )
-                                assignment.teacherFeedback?.let {
-                                    Text(text = "Feedback: $it", fontSize = 12.sp)
-                                }
-                            }
-                        }
-                    } else if (assignment.status == SubmissionStatus.PENDING) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Button(
-                            onClick = { selectedAssignmentForSubmit = assignment },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text("Submit Assignment")
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (selectedAssignmentForSubmit != null) {
-        AlertDialog(
-            onDismissRequest = { selectedAssignmentForSubmit = null },
-            title = { Text("Submit: ${selectedAssignmentForSubmit?.title}") },
-            text = {
-                Column {
-                    Text("Type solution notes or paste your cloud document link:")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = submissionText,
-                        onValueChange = { submissionText = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        maxLines = 4,
-                        placeholder = { Text("Solution notes or Google Drive / PDF Link") }
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (submissionText.isNotBlank()) {
-                            selectedAssignmentForSubmit?.id?.let { id ->
-                                viewModel.submitHomework(id, submissionText)
-                                Toast.makeText(context, "Submitted successfully!", Toast.LENGTH_SHORT).show()
-                                submissionText = ""
-                                selectedAssignmentForSubmit = null
-                            }
-                        }
-                    }
-                ) {
-                    Text("Submit")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { selectedAssignmentForSubmit = null }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-}
-
-@Composable
-fun StudentAttendanceScreen(viewModel: StudentViewModel) {
-    val attendancePct by viewModel.attendancePercentage.collectAsState()
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Text(
-            text = "Attendance Records",
-            fontWeight = FontWeight.Bold,
-            fontSize = 20.sp
-        )
-
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text(text = "Current Month Summary", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-                Spacer(modifier = Modifier.height(12.dp))
-                LinearProgressIndicator(
-                    progress = { attendancePct / 100f },
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(10.dp)
-                        .clip(CircleShape),
-                    color = Color(0xFF2E7D32)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = "Present: 23 Days", fontSize = 13.sp)
-                    Text(text = "Absent: 2 Days", fontSize = 13.sp)
-                    Text(text = "$attendancePct%", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Column {
+                        Text(fee.monthYear, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text("Due Date: ${fee.dueDate}", color = Color.Gray, fontSize = 13.sp)
+                        Text("Amount: ₹${fee.amountDue}", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    }
+                    Text(
+                        fee.status.name,
+                        fontWeight = FontWeight.Bold,
+                        color = if (fee.status == FeePaymentStatus.PAID) Color(0xFF2E7D32) else Color(0xFFEF6C00)
+                    )
                 }
             }
         }
