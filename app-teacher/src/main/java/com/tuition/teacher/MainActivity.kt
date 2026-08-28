@@ -502,4 +502,66 @@ fun TeacherAssignmentsScreen(viewModel: TeacherViewModel) {
                 Icon(Icons.Default.Add, contentDescription = "Create Assignment", tint = Color.White)
             }
         }
-    ) 
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                Text(
+                    text = "Assignment Evaluator & Creator",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp
+                )
+            }
+
+            items(assignments) { item ->
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(item.title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text(item.description, fontSize = 13.sp)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text("Due: ${item.dueDate} • Marks: ${item.totalMarks}", fontSize = 12.sp, color = Color.Gray)
+                    }
+                }
+            }
+        }
+    }
+
+    if (showCreateDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreateDialog = false },
+            title = { Text("Create Homework Task") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title") })
+                    OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text("Instructions") })
+                    OutlinedTextField(value = due, onValueChange = { due = it }, label = { Text("Due Date / Time") })
+                    OutlinedTextField(value = marks, onValueChange = { marks = it }, label = { Text("Total Marks") })
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (title.isNotBlank()) {
+                            viewModel.createAssignment("b1", title, desc, due, marks.toIntOrNull() ?: 50)
+                            showCreateDialog = false
+                            title = ""; desc = ""; due = ""
+                        }
+                    }
+                ) {
+                    Text("Publish")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+}
