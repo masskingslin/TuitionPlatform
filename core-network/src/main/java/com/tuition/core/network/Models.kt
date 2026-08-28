@@ -1,85 +1,126 @@
 package com.tuition.core.network
 
-import com.google.gson.annotations.SerializedName
+import kotlinx.serialization.Serializable
 
+@Serializable
 enum class UserRole {
-    @SerializedName("student") STUDENT,
-    @SerializedName("teacher") TEACHER,
-    @SerializedName("admin") ADMIN
+    STUDENT,
+    TEACHER,
+    ADMIN
 }
 
-enum class BookingStatus {
-    @SerializedName("pending") PENDING,
-    @SerializedName("confirmed") CONFIRMED,
-    @SerializedName("completed") COMPLETED,
-    @SerializedName("cancelled") CANCELLED
+@Serializable
+enum class AttendanceStatus {
+    PRESENT,
+    ABSENT,
+    LATE,
+    EXCUSED
 }
 
-data class User(
-    val id: String,
-    val name: String,
+@Serializable
+enum class FeePaymentStatus {
+    PAID,
+    PENDING,
+    OVERDUE
+}
+
+@Serializable
+data class AuthRequest(
     val email: String,
-    val role: UserRole,
-    val phone: String = ""
+    val passwordHash: String,
+    val role: UserRole
 )
 
-data class TuitionClass(
+@Serializable
+data class AuthResponse(
+    val token: String,
+    val userId: String,
+    val fullName: String,
+    val email: String,
+    val role: UserRole
+)
+
+@Serializable
+data class StudentProfile(
+    val id: String,
+    val name: String,
+    val grade: String,
+    val section: String,
+    val guardianName: String,
+    val guardianPhone: String,
+    val enrolledCourses: List<String> = emptyList(),
+    val overallAttendancePercent: Double = 0.0
+)
+
+@Serializable
+data class TeacherProfile(
+    val id: String,
+    val name: String,
+    val subjects: List<String> = emptyList(),
+    val assignedBatches: List<String> = emptyList(),
+    val email: String,
+    val phone: String
+)
+
+@Serializable
+data class CourseBatch(
     val id: String,
     val title: String,
     val subject: String,
-    val gradeLevel: String,
-    val teacherId: String,
     val teacherName: String,
-    val description: String,
-    val schedule: String,
-    val monthlyFee: Double,
-    val meetingUrl: String = "",
-    val enrolledCount: Int = 0,
-    val maxCapacity: Int = 30
+    val scheduleTime: String,
+    val activeStudentCount: Int,
+    val roomOrMeetingLink: String
 )
 
-data class Booking(
-    val id: String,
-    val classId: String,
-    val classTitle: String,
-    val studentId: String,
-    val studentName: String,
-    val bookingDate: String,
-    val status: BookingStatus,
-    val monthlyFee: Double
-)
-
-data class Assignment(
-    val id: String,
-    val classId: String,
-    val title: String,
-    val description: String,
-    val dueDate: String,
-    val maxScore: Int = 100
-)
-
-data class Submission(
-    val id: String,
-    val assignmentId: String,
-    val studentId: String,
-    val studentName: String,
-    val content: String,
-    val submittedAt: String,
-    val score: Int? = null,
-    val feedback: String? = null
-)
-
+@Serializable
 data class AttendanceRecord(
     val id: String,
-    val classId: String,
+    val batchId: String,
     val studentId: String,
     val studentName: String,
     val date: String,
-    val isPresent: Boolean
+    val status: AttendanceStatus,
+    val notes: String = ""
 )
 
-data class ApiResponse<T>(
-    val success: Boolean,
-    val message: String? = null,
-    val data: T? = null
+@Serializable
+data class MarkAttendanceRequest(
+    val batchId: String,
+    val date: String,
+    val records: List<AttendanceRecord>
+)
+
+@Serializable
+data class Assignment(
+    val id: String,
+    val batchId: String,
+    val title: String,
+    val description: String,
+    val dueDate: String,
+    val maxScore: Int,
+    val isSubmitted: Boolean = false,
+    val scoreEarned: Int? = null
+)
+
+@Serializable
+data class FeeRecord(
+    val invoiceId: String,
+    val studentId: String,
+    val studentName: String,
+    val monthYear: String,
+    val amountDue: Double,
+    val amountPaid: Double,
+    val status: FeePaymentStatus,
+    val dueDate: String
+)
+
+@Serializable
+data class Announcement(
+    val id: String,
+    val title: String,
+    val message: String,
+    val authorName: String,
+    val timestamp: String,
+    val priority: String = "NORMAL"
 )
