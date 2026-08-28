@@ -1,14 +1,12 @@
 package com.tuition.teacher
 
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -16,140 +14,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tuition.core.network.*
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-
-class TeacherViewModel : ViewModel() {
-    private val _batches = MutableStateFlow<List<TuitionBatch>>(emptyList())
-    val batches: StateFlow<List<TuitionBatch>> = _batches.asStateFlow()
-
-    private val _assignments = MutableStateFlow<List<Assignment>>(emptyList())
-    val assignments: StateFlow<List<Assignment>> = _assignments.asStateFlow()
-
-    private val _students = MutableStateFlow<List<UserProfile>>(emptyList())
-    val students: StateFlow<List<UserProfile>> = _students.asStateFlow()
-
-    private val _attendanceMap = MutableStateFlow<Map<String, AttendanceStatus>>(emptyMap())
-    val attendanceMap: StateFlow<Map<String, AttendanceStatus>> = _attendanceMap.asStateFlow()
-
-    init {
-        loadMockData()
-    }
-
-    private fun loadMockData() {
-        _batches.value = listOf(
-            TuitionBatch(
-                id = "b1",
-                title = "Class 10 - Advanced Mathematics",
-                subject = "Mathematics",
-                grade = "Grade 10",
-                teacherName = "Kingslin",
-                scheduleTime = "Mon, Wed, Fri - 5:30 PM",
-                monthlyFee = 1500.0,
-                enrolledStudents = 24,
-                maxCapacity = 30,
-                meetingUrl = "https://meet.google.com/abc-defg-hij",
-                isLiveNow = false
-            ),
-            TuitionBatch(
-                id = "b2",
-                title = "Class 12 - Pure Physics",
-                subject = "Physics",
-                grade = "Grade 12",
-                teacherName = "Kingslin",
-                scheduleTime = "Daily - 7:00 PM",
-                monthlyFee = 2000.0,
-                enrolledStudents = 19,
-                maxCapacity = 25,
-                meetingUrl = null,
-                isLiveNow = false
-            )
-        )
-
-        _students.value = listOf(
-            UserProfile(id = "s1", name = "Rahul Sharma", email = "rahul@tuition.com", phone = "9876543210", role = UserRole.STUDENT),
-            UserProfile(id = "s2", name = "Priya Nathan", email = "priya@tuition.com", phone = "9876543211", role = UserRole.STUDENT),
-            UserProfile(id = "s3", name = "Anand Kumar", email = "anand@tuition.com", phone = "9876543212", role = UserRole.STUDENT),
-            UserProfile(id = "s4", name = "Sneha Patel", email = "sneha@tuition.com", phone = "9876543213", role = UserRole.STUDENT)
-        )
-
-        _assignments.value = listOf(
-            Assignment(
-                id = "a1",
-                batchId = "b1",
-                title = "Quadratic Equations Problem Set 4",
-                description = "24 Submissions • 18 Graded",
-                dueDate = "Tomorrow, 8:00 PM",
-                totalMarks = 50,
-                status = SubmissionStatus.SUBMITTED
-            )
-        )
-
-        _attendanceMap.value = _students.value.associate { it.id to AttendanceStatus.PRESENT }
-    }
-
-    fun toggleLiveClass(batchId: String) {
-        viewModelScope.launch {
-            _batches.value = _batches.value.map {
-                if (it.id == batchId) it.copy(isLiveNow = !it.isLiveNow) else it
-            }
-        }
-    }
-
-    fun addBatch(title: String, subject: String, grade: String, fee: Double, time: String) {
-        val newBatch = TuitionBatch(
-            id = "b_${System.currentTimeMillis()}",
-            title = title,
-            subject = subject,
-            grade = grade,
-            teacherName = "Kingslin",
-            scheduleTime = time,
-            monthlyFee = fee,
-            enrolledStudents = 0,
-            maxCapacity = 30
-        )
-        _batches.value = _batches.value + newBatch
-    }
-
-    fun updateStudentAttendance(studentId: String, status: AttendanceStatus) {
-        _attendanceMap.value = _attendanceMap.value.toMutableMap().apply {
-            put(studentId, status)
-        }
-    }
-
-    fun createAssignment(batchId: String, title: String, description: String, dueDate: String, marks: Int) {
-        val newAssignment = Assignment(
-            id = "a_${System.currentTimeMillis()}",
-            batchId = batchId,
-            title = title,
-            description = description,
-            dueDate = dueDate,
-            totalMarks = marks,
-            status = SubmissionStatus.PENDING
-        )
-        _assignments.value = _assignments.value + newAssignment
-    }
-}
-
-sealed class TeacherScreen(val title: String, val icon: ImageVector) {
-    object Dashboard : TeacherScreen("Dashboard", Icons.Default.Dashboard)
-    object Batches : TeacherScreen("Batches", Icons.Default.Class)
-    object Attendance : TeacherScreen("Attendance", Icons.Default.Checklist)
-    object Assignments : TeacherScreen("Assignments", Icons.Default.AssignmentTurnedIn)
-}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -157,162 +27,117 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme(
                 colorScheme = lightColorScheme(
-                    primary = Color(0xFF2E7D32),
-                    primaryContainer = Color(0xFFE8F5E9),
-                    secondary = Color(0xFF1565C0),
-                    surface = Color(0xFFFAFAFA)
+                    primary = Color(0xFF00695C),
+                    secondary = Color(0xFF0288D1),
+                    background = Color(0xFFF4F6F8),
+                    surface = Color.White
                 )
             ) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.surface
-                ) {
-                    val viewModel: TeacherViewModel = viewModel()
-                    TeacherMainScreen(viewModel)
-                }
+                TeacherAppRoot()
             }
         }
     }
+}
+
+enum class TeacherNavScreen(val title: String, val icon: ImageVector) {
+    BATCHES("Batches", Icons.Default.Class),
+    ATTENDANCE("Mark Attendance", Icons.Default.CheckCircle),
+    HOMEWORK("Assignments", Icons.Default.AddBox),
+    FEE_TRACKER("Fee Tracker", Icons.Default.ReceiptLong)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TeacherMainScreen(viewModel: TeacherViewModel) {
-    var selectedScreen by remember { mutableStateOf<TeacherScreen>(TeacherScreen.Dashboard) }
+fun TeacherAppRoot() {
+    var selectedScreen by remember { mutableStateOf(TeacherNavScreen.BATCHES) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = "Tuition Platform",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp
-                        )
-                        Text(
-                            text = "Teacher Management Suite",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { /* Settings / Broadcast */ }) {
-                        Icon(Icons.Default.Campaign, contentDescription = "Broadcast")
-                    }
-                }
+                title = { Text(selectedScreen.title, fontWeight = FontWeight.Bold) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    titleContentColor = Color.White
+                )
             )
         },
         bottomBar = {
-            NavigationBar {
-                val screens = listOf(
-                    TeacherScreen.Dashboard,
-                    TeacherScreen.Batches,
-                    TeacherScreen.Attendance,
-                    TeacherScreen.Assignments
-                )
-                screens.forEach { screen ->
+            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                TeacherNavScreen.values().forEach { screen ->
                     NavigationBarItem(
                         selected = selectedScreen == screen,
                         onClick = { selectedScreen = screen },
-                        label = { Text(screen.title) },
-                        icon = { Icon(screen.icon, contentDescription = screen.title) }
+                        icon = { Icon(screen.icon, contentDescription = screen.title) },
+                        label = { Text(screen.title) }
                     )
                 }
             }
         }
-    ) { innerPadding ->
+    ) { paddingValues ->
         Box(
             modifier = Modifier
-                .padding(innerPadding)
                 .fillMaxSize()
+                .padding(paddingValues)
+                .background(MaterialTheme.colorScheme.background)
         ) {
             when (selectedScreen) {
-                is TeacherScreen.Dashboard -> TeacherDashboardScreen(viewModel)
-                is TeacherScreen.Batches -> TeacherBatchesScreen(viewModel)
-                is TeacherScreen.Attendance -> TeacherAttendanceScreen(viewModel)
-                is TeacherScreen.Assignments -> TeacherAssignmentsScreen(viewModel)
+                TeacherNavScreen.BATCHES -> TeacherBatchesScreen()
+                TeacherNavScreen.ATTENDANCE -> TeacherAttendanceScreen()
+                TeacherNavScreen.HOMEWORK -> TeacherAssignmentsScreen()
+                TeacherNavScreen.FEE_TRACKER -> TeacherFeeTrackerScreen()
             }
         }
     }
 }
 
 @Composable
-fun TeacherDashboardScreen(viewModel: TeacherViewModel) {
-    val batches by viewModel.batches.collectAsState()
-    val students by viewModel.students.collectAsState()
+fun TeacherBatchesScreen() {
+    val batches = remember {
+        listOf(
+            CourseBatch("b1", "Grade 10 - Mathematics", "Math", "Instructor", "05:00 PM - 06:30 PM", 18, "Room 101"),
+            CourseBatch("b2", "Grade 11 - Advanced Calculus", "Math", "Instructor", "06:45 PM - 08:00 PM", 12, "Room 102"),
+            CourseBatch("b3", "Grade 9 - Foundation Science", "Science", "Instructor", "Tomorrow 04:00 PM", 22, "Room 101")
+        )
+    }
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Metric Counters
         item {
-            Row(
+            Card(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
-                Card(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Active Batches", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                        Text("${batches.size}", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1B5E20))
-                    }
-                }
-                Card(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F2FD))
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Total Students", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                        Text("${batches.sumOf { it.enrolledStudents }}", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0D47A1))
-                    }
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Teacher Console", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("3 Active Batches • 52 Enrolled Students", color = Color.White.copy(alpha = 0.9f))
                 }
             }
-        }
-
-        item {
-            Text(
-                text = "Today's Schedule & Live Control",
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp
-            )
         }
 
         items(batches) { batch ->
             Card(
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(2.dp)
             ) {
-                Row(
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = batch.title, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                        Text(text = "⏰ ${batch.scheduleTime}", fontSize = 12.sp, color = Color.Gray)
-                        Text(text = "👥 ${batch.enrolledStudents} enrolled", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                    }
-
-                    Button(
-                        onClick = { viewModel.toggleLiveClass(batch.id) },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (batch.isLiveNow) Color.Red else Color(0xFF2E7D32)
-                        ),
-                        shape = RoundedCornerShape(8.dp)
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(if (batch.isLiveNow) "End Live" else "Start Live")
+                        Text(batch.title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Badge { Text("${batch.activeStudentCount} Students") }
                     }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text("Timing: ${batch.scheduleTime}", color = Color.DarkGray, fontSize = 13.sp)
+                    Text("Location/Link: ${batch.roomOrMeetingLink}", color = Color.Gray, fontSize = 13.sp)
                 }
             }
         }
@@ -320,248 +145,179 @@ fun TeacherDashboardScreen(viewModel: TeacherViewModel) {
 }
 
 @Composable
-fun TeacherBatchesScreen(viewModel: TeacherViewModel) {
-    val batches by viewModel.batches.collectAsState()
-    var showDialog by remember { mutableStateOf(false) }
-
-    var title by remember { mutableStateOf("") }
-    var subject by remember { mutableStateOf("") }
-    var grade by remember { mutableStateOf("") }
-    var fee by remember { mutableStateOf("") }
-    var time by remember { mutableStateOf("") }
-
-    Scaffold(
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showDialog = true },
-                containerColor = MaterialTheme.colorScheme.primary
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Batch", tint = Color.White)
-            }
-        }
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item {
-                Text(
-                    text = "Manage All Batches",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp
-                )
-            }
-
-            items(batches) { batch ->
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(batch.title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Text("₹${batch.monthlyFee.toInt()}/mo", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                        }
-                        Text("Subject: ${batch.subject} • ${batch.grade}", fontSize = 13.sp)
-                        Text("Timing: ${batch.scheduleTime}", fontSize = 12.sp, color = Color.Gray)
-                    }
-                }
-            }
-        }
-    }
-
-    if (showDialog) {
-        AlertDialog(
-            onDismissRequest = { showDialog = false },
-            title = { Text("Create New Batch") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Batch Title") })
-                    OutlinedTextField(value = subject, onValueChange = { subject = it }, label = { Text("Subject") })
-                    OutlinedTextField(value = grade, onValueChange = { grade = it }, label = { Text("Grade / Standard") })
-                    OutlinedTextField(value = fee, onValueChange = { fee = it }, label = { Text("Monthly Fee (₹)") })
-                    OutlinedTextField(value = time, onValueChange = { time = it }, label = { Text("Schedule (e.g. Mon-Wed 6 PM)") })
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (title.isNotBlank() && subject.isNotBlank()) {
-                            viewModel.addBatch(title, subject, grade, fee.toDoubleOrNull() ?: 1000.0, time)
-                            showDialog = false
-                            title = ""; subject = ""; grade = ""; fee = ""; time = ""
-                        }
-                    }
-                ) {
-                    Text("Create")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDialog = false }) { Text("Cancel") }
-            }
+fun TeacherAttendanceScreen() {
+    val students = remember {
+        mutableStateListOf(
+            Pair("Aravind Kumar", AttendanceStatus.PRESENT),
+            Pair("Divya Sharma", AttendanceStatus.PRESENT),
+            Pair("Ganesh Raman", AttendanceStatus.ABSENT),
+            Pair("Kavitha Selvam", AttendanceStatus.PRESENT),
+            Pair("Pradeep Raj", AttendanceStatus.LATE)
         )
     }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Text("Grade 10 - Mathematics (Today)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Spacer(modifier = Modifier.height(12.dp))
+
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            items(students.size) { index ->
+                val (name, status) = students[index]
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(name, fontWeight = FontWeight.Medium)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FilterChip(
+                                selected = status == AttendanceStatus.PRESENT,
+                                onClick = { students[index] = Pair(name, AttendanceStatus.PRESENT) },
+                                label = { Text("P") }
+                            )
+                            FilterChip(
+                                selected = status == AttendanceStatus.ABSENT,
+                                onClick = { students[index] = Pair(name, AttendanceStatus.ABSENT) },
+                                label = { Text("A") }
+                            )
+                            FilterChip(
+                                selected = status == AttendanceStatus.LATE,
+                                onClick = { students[index] = Pair(name, AttendanceStatus.LATE) },
+                                label = { Text("L") }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        Button(
+            onClick = { /* Submit attendance payload */ },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Text("Save & Notify Parents")
+        }
+    }
 }
 
 @Composable
-fun TeacherAttendanceScreen(viewModel: TeacherViewModel) {
-    val students by viewModel.students.collectAsState()
-    val attendanceMap by viewModel.attendanceMap.collectAsState()
-    val context = LocalContext.current
+fun TeacherAssignmentsScreen() {
+    var assignmentTitle by remember { mutableStateOf("") }
+    var assignmentDesc by remember { mutableStateOf("") }
 
-    LazyColumn(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("Digital Attendance Register", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Text("Class 10 - Mathematics", fontSize = 13.sp, color = Color.Gray)
-                }
-                Button(
-                    onClick = {
-                        Toast.makeText(context, "Attendance synced to cloud!", Toast.LENGTH_SHORT).show()
-                    },
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text("Save")
-                }
-            }
-        }
+        Text("Create New Homework / Task", fontWeight = FontWeight.Bold, fontSize = 18.sp)
 
-        items(students) { student ->
-            val status = attendanceMap[student.id] ?: AttendanceStatus.PRESENT
-            Card(
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .padding(12.dp)
-                        .fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(student.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                        Text(student.phone, fontSize = 12.sp, color = Color.Gray)
-                    }
+        OutlinedTextField(
+            value = assignmentTitle,
+            onValueChange = { assignmentTitle = it },
+            label = { Text("Assignment Title") },
+            modifier = Modifier.fillMaxWidth()
+        )
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        FilterChip(
-                            selected = status == AttendanceStatus.PRESENT,
-                            onClick = { viewModel.updateStudentAttendance(student.id, AttendanceStatus.PRESENT) },
-                            label = { Text("P") }
-                        )
-                        FilterChip(
-                            selected = status == AttendanceStatus.ABSENT,
-                            onClick = { viewModel.updateStudentAttendance(student.id, AttendanceStatus.ABSENT) },
-                            label = { Text("A") }
-                        )
-                        FilterChip(
-                            selected = status == AttendanceStatus.LATE,
-                            onClick = { viewModel.updateStudentAttendance(student.id, AttendanceStatus.LATE) },
-                            label = { Text("L") }
-                        )
-                    }
-                }
-            }
+        OutlinedTextField(
+            value = assignmentDesc,
+            onValueChange = { assignmentDesc = it },
+            label = { Text("Instructions & Problems") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 3
+        )
+
+        Button(
+            onClick = {
+                assignmentTitle = ""
+                assignmentDesc = ""
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Icon(Icons.Default.Upload, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Publish to Batch")
         }
     }
 }
 
 @Composable
-fun TeacherAssignmentsScreen(viewModel: TeacherViewModel) {
-    val assignments by viewModel.assignments.collectAsState()
-    var showCreateDialog by remember { mutableStateOf(false) }
-
-    var title by remember { mutableStateOf("") }
-    var desc by remember { mutableStateOf("") }
-    var due by remember { mutableStateOf("") }
-    var marks by remember { mutableStateOf("50") }
-
-    Scaffold(
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showCreateDialog = true },
-                containerColor = MaterialTheme.colorScheme.primary
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Create Assignment", tint = Color.White)
-            }
-        }
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item {
-                Text(
-                    text = "Assignment Evaluator & Creator",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp
-                )
-            }
-
-            items(assignments) { item ->
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(item.title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        Text(item.description, fontSize = 13.sp)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text("Due: ${item.dueDate} • Marks: ${item.totalMarks}", fontSize = 12.sp, color = Color.Gray)
-                    }
-                }
-            }
-        }
+fun TeacherFeeTrackerScreen() {
+    val feeRecords = remember {
+        listOf(
+            FeeRecord("inv-01", "s1", "Aravind Kumar", "August 2026", 1500.0, 1500.0, FeePaymentStatus.PAID, "2026-08-10"),
+            FeeRecord("inv-02", "s2", "Divya Sharma", "August 2026", 1500.0, 1500.0, FeePaymentStatus.PAID, "2026-08-10"),
+            FeeRecord("inv-03", "s3", "Ganesh Raman", "August 2026", 1500.0, 0.0, FeePaymentStatus.OVERDUE, "2026-08-10"),
+            FeeRecord("inv-04", "s4", "Kavitha Selvam", "August 2026", 1500.0, 0.0, FeePaymentStatus.PENDING, "2026-08-15")
+        )
     }
 
-    if (showCreateDialog) {
-        AlertDialog(
-            onDismissRequest = { showCreateDialog = false },
-            title = { Text("Create Homework Task") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title") })
-                    OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text("Instructions") })
-                    OutlinedTextField(value = due, onValueChange = { due = it }, label = { Text("Due Date / Time") })
-                    OutlinedTextField(value = marks, onValueChange = { marks = it }, label = { Text("Total Marks") })
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (title.isNotBlank()) {
-                            viewModel.createAssignment("b1", title, desc, due, marks.toIntOrNull() ?: 50)
-                            showCreateDialog = false
-                            title = ""; desc = ""; due = ""
-                        }
-                    }
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFECEFF1))
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Publish")
+                    Text("Total Collected: ₹3,000", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                    Text("Pending: ₹3,000", fontWeight = FontWeight.Bold, color = Color(0xFFC62828))
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCreateDialog = false }) { Text("Cancel") }
             }
-        )
+        }
+
+        items(feeRecords) { fee ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(fee.studentName, fontWeight = FontWeight.Bold)
+                        Text("Invoice: ${fee.invoiceId} • ₹${fee.amountDue}", fontSize = 13.sp, color = Color.Gray)
+                    }
+                    Text(
+                        fee.status.name,
+                        fontWeight = FontWeight.Bold,
+                        color = when (fee.status) {
+                            FeePaymentStatus.PAID -> Color(0xFF2E7D32)
+                            FeePaymentStatus.PENDING -> Color(0xFFEF6C00)
+                            FeePaymentStatus.OVERDUE -> Color(0xFFC62828)
+                        }
+                    )
+                }
+            }
+        }
     }
 }
