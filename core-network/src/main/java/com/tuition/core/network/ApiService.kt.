@@ -1,39 +1,78 @@
 package com.tuition.core.network
 
 import retrofit2.Response
-import retrofit2.http.Body
-import retrofit2.http.DELETE
-import retrofit2.http.Header
-import retrofit2.http.POST
-import retrofit2.http.PUT
-import retrofit2.http.Path
+import retrofit2.http.*
 
 interface ApiService {
-    
-    // --- STUDENT AUTHENTICATION ---
-    @POST("/api/auth/register")
-    suspend fun registerStudent(
-        @Body request: AuthRequest
-    ): Response<AuthResponse>
 
-    @POST("/api/auth/login")
-    suspend fun login(
-        @Body request: AuthRequest
-    ): Response<AuthResponse>
+    // Authentication & Profile
+    @GET("api/profile")
+    suspend fun getUserProfile(): Response<ApiResponse<UserProfile>>
 
-    // --- TEACHER ADMINISTRATIVE CONTROLS ---
-    // The @Header annotation sends the Teacher's secure JWT token
-    
-    @PUT("/api/admin/students/{studentId}")
-    suspend fun editStudent(
-        @Header("Authorization") token: String,
-        @Path("studentId") studentId: String,
-        @Body request: EditStudentRequest
-    ): Response<GenericResponse>
+    // Batches & Classes
+    @GET("api/batches")
+    suspend fun getBatches(
+        @Query("role") role: String
+    ): Response<ApiResponse<List<TuitionBatch>>>
 
-    @DELETE("/api/admin/students/{studentId}")
-    suspend fun removeStudent(
-        @Header("Authorization") token: String,
-        @Path("studentId") studentId: String
-    ): Response<GenericResponse>
+    @POST("api/batches/create")
+    suspend fun createBatch(
+        @Body batch: TuitionBatch
+    ): Response<ApiResponse<TuitionBatch>>
+
+    @POST("api/batches/{id}/start-live")
+    suspend fun startLiveClass(
+        @Path("id") batchId: String,
+        @Query("meetingUrl") meetingUrl: String
+    ): Response<ApiResponse<Boolean>>
+
+    // Assignments
+    @GET("api/assignments")
+    suspend fun getAssignments(
+        @Query("batchId") batchId: String? = null
+    ): Response<ApiResponse<List<Assignment>>>
+
+    @POST("api/assignments/create")
+    suspend fun createAssignment(
+        @Body request: CreateAssignmentRequest
+    ): Response<ApiResponse<Assignment>>
+
+    @GET("api/assignments/{id}/submissions")
+    suspend fun getSubmissions(
+        @Path("id") assignmentId: String
+    ): Response<ApiResponse<List<AssignmentSubmission>>>
+
+    @POST("api/assignments/submit")
+    suspend fun submitAssignment(
+        @Query("assignmentId") assignmentId: String,
+        @Body submission: AssignmentSubmission
+    ): Response<ApiResponse<Boolean>>
+
+    @POST("api/assignments/grade")
+    suspend fun gradeSubmission(
+        @Body gradeRequest: GradeSubmissionRequest
+    ): Response<ApiResponse<Boolean>>
+
+    // Attendance
+    @GET("api/attendance")
+    suspend fun getAttendance(
+        @Query("batchId") batchId: String,
+        @Query("date") date: String
+    ): Response<ApiResponse<List<AttendanceRecord>>>
+
+    @POST("api/attendance/mark")
+    suspend fun markAttendance(
+        @Body request: MarkAttendanceRequest
+    ): Response<ApiResponse<Boolean>>
+
+    // Announcements
+    @GET("api/announcements")
+    suspend fun getAnnouncements(
+        @Query("batchId") batchId: String? = null
+    ): Response<ApiResponse<List<Announcement>>>
+
+    @POST("api/announcements/create")
+    suspend fun createAnnouncement(
+        @Body announcement: Announcement
+    ): Response<ApiResponse<Announcement>>
 }
