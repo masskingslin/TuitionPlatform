@@ -1,78 +1,102 @@
 package com.tuition.core.network
 
+import okhttp3.OkHttpClient
+import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Response
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
+import java.util.concurrent.TimeUnit
 
 interface ApiService {
 
-    // Authentication & Profile
-    @GET("api/profile")
-    suspend fun getUserProfile(): Response<ApiResponse<UserProfile>>
+    // Classes / Courses
+    @GET("api/v1/classes")
+    suspend fun getAvailableClasses(
+        @Query("subject") subject: String? = null,
+        @Query("grade") grade: String? = null
+    ): Response<List<TuitionClass>>
 
-    // Batches & Classes
-    @GET("api/batches")
-    suspend fun getBatches(
-        @Query("role") role: String
-    ): Response<ApiResponse<List<TuitionBatch>>>
+    @GET("api/v1/classes/{id}")
+    suspend fun getClassById(@Path("id") id: String): Response<TuitionClass>
 
-    @POST("api/batches/create")
-    suspend fun createBatch(
-        @Body batch: TuitionBatch
-    ): Response<ApiResponse<TuitionBatch>>
+    @POST("api/v1/classes")
+    suspend fun createClass(@Body tuitionClass: TuitionClass): Response<TuitionClass>
 
-    @POST("api/batches/{id}/start-live")
-    suspend fun startLiveClass(
-        @Path("id") batchId: String,
-        @Query("meetingUrl") meetingUrl: String
-    ): Response<ApiResponse<Boolean>>
+    @DELETE("api/v1/classes/{id}")
+    suspend fun deleteClass(@Path("id") id: String): Response<Unit>
+
+    // Bookings & Enrollments
+    @POST("api/v1/bookings")
+    suspend fun createBooking(@Body booking: Booking): Response<Booking>
+
+    @GET("api/v1/bookings/student/{studentId}")
+    suspend fun getStudentBookings(@Path("studentId") studentId: String): Response<List<Booking>>
+
+    @GET("api/v1/bookings/teacher/{teacherId}")
+    suspend fun getTeacherBookings(@Path("teacherId") teacherId: String): Response<List<Booking>>
+
+    @PATCH("api/v1/bookings/{id}/status")
+    suspend fun updateBookingStatus(
+        @Path("id") id: String,
+        @Query("status") status: String
+    ): Response<Booking>
 
     // Assignments
-    @GET("api/assignments")
-    suspend fun getAssignments(
-        @Query("batchId") batchId: String? = null
-    ): Response<ApiResponse<List<Assignment>>>
+    @GET("api/v1/classes/{classId}/assignments")
+    suspend fun getAssignments(@Path("classId") classId: String): Response<List<Assignment>>
 
-    @POST("api/assignments/create")
+    @POST("api/v1/classes/{classId}/assignments")
     suspend fun createAssignment(
-        @Body request: CreateAssignmentRequest
-    ): Response<ApiResponse<Assignment>>
+        @Path("classId") classId: String,
+        @Body assignment: Assignment
+    ): Response<Assignment>
 
-    @GET("api/assignments/{id}/submissions")
-    suspend fun getSubmissions(
-        @Path("id") assignmentId: String
-    ): Response<ApiResponse<List<AssignmentSubmission>>>
-
-    @POST("api/assignments/submit")
+    // Submissions
+    @POST("api/v1/assignments/{assignmentId}/submit")
     suspend fun submitAssignment(
-        @Query("assignmentId") assignmentId: String,
-        @Body submission: AssignmentSubmission
-    ): Response<ApiResponse<Boolean>>
+        @Path("assignmentId") assignmentId: String,
+        @Body submission: Submission
+    ): Response<Submission>
 
-    @POST("api/assignments/grade")
+    @GET("api/v1/assignments/{assignmentId}/submissions")
+    suspend fun getSubmissions(@Path("assignmentId") assignmentId: String): Response<List<Submission>>
+
+    @PATCH("api/v1/submissions/{submissionId}/grade")
     suspend fun gradeSubmission(
-        @Body gradeRequest: GradeSubmissionRequest
-    ): Response<ApiResponse<Boolean>>
+        @Path("submissionId") submissionId: String,
+        @Query("score") score: Int,
+        @Query("feedback") feedback: String
+    ): Response<Submission>
 
     // Attendance
-    @GET("api/attendance")
-    suspend fun getAttendance(
-        @Query("batchId") batchId: String,
-        @Query("date") date: String
-    ): Response<ApiResponse<List<AttendanceRecord>>>
+    @POST("api/v1/classes/{classId}/attendance")
+    suspend fun submitAttendance(
+        @Path("classId") classId: String,
+        @Body records: List<AttendanceRecord>
+    ): Response<Unit>
+}
 
-    @POST("api/attendance/mark")
-    suspend fun markAttendance(
-        @Body request: MarkAttendanceRequest
-    ): Response<ApiResponse<Boolean>>
+object TuitionApiClient {
+    private const val BASE_URL = "https://api.tuitionplatform.internal/"
 
-    // Announcements
-    @GET("api/announcements")
-    suspend fun getAnnouncements(
-        @Query("batchId") batchId: String? = null
-    ): Response<ApiResponse<List<Announcement>>>
+    fun create(baseUrl: String = BASE_URL): ApiService {
+        val loggingInterceptor = HttpLoggingInterceptor().apply {
+            level = HttpLoggingInterceptor.Level.BODY
+        }
 
-    @POST("api/announcements/create")
-    suspend fun createAnnouncement(
-        @Body announcement: Announcement
-    ): Response<ApiResponse<Announcement>>
+        val okHttpClient = OkHttpClient.Builder()
+            .addInterceptor(loggingInterceptor)
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .build()
+
+        return Retrofit.Builder()
+            .baseUrl(baseUrl)
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(ApiService::class.java)
+    }
 }
