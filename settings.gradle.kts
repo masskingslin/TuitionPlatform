@@ -20,6 +20,6 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "TuitionPlatform"
+include(":core-network")
 include(":app-student")
 include(":app-teacher")
-include(":core-network")
