@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { useTuition } from '../../context/TuitionContext';
 import { Assignment } from '../../types';
+import { FileUploadInput } from '../common/FileUploadInput';
+import { FilePreviewModal } from '../common/FilePreviewModal';
+import { downloadFile } from '../../services/storageService';
 import {
   FileText,
   Calendar,
@@ -8,7 +11,6 @@ import {
   Clock,
   Send,
   MessageSquareQuote,
-  Paperclip,
   Download,
   AlertTriangle,
   BookOpen,
@@ -24,11 +26,18 @@ export const StudentAssignmentsScreen: React.FC = () => {
   const [submissionNote, setSubmissionNote] = useState('');
   const [attachedAnswerSheet, setAttachedAnswerSheet] = useState('');
   const [attachedAnswerSize, setAttachedAnswerSize] = useState('2.4 MB · 5 pages');
+  const [attachedAnswerUrl, setAttachedAnswerUrl] = useState<string | undefined>(undefined);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'SUBMITTED' | 'GRADED'>('ALL');
   const [subjectFilter, setSubjectFilter] = useState<string>('ALL');
   const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
   const [previewQP, setPreviewQP] = useState<Assignment | null>(null);
   const [previewAnswerSheet, setPreviewAnswerSheet] = useState<Assignment | null>(null);
+  const [activeFilePreview, setActiveFilePreview] = useState<{
+    url?: string;
+    name: string;
+    title: string;
+    size?: string;
+  } | null>(null);
 
   const pendingAssignments = assignments.filter((a) => !a.isSubmitted);
   const submittedAssignments = assignments.filter((a) => a.isSubmitted);
@@ -39,6 +48,7 @@ export const StudentAssignmentsScreen: React.FC = () => {
     setSubmissionNote('');
     setAttachedAnswerSheet(`Aravind_Kumar_${item.subject || 'Assignment'}_Solutions.pdf`);
     setAttachedAnswerSize('2.4 MB · 5 pages');
+    setAttachedAnswerUrl(undefined);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -48,10 +58,12 @@ export const StudentAssignmentsScreen: React.FC = () => {
       activeSubmission.id,
       submissionNote.trim() || 'Completed all assigned questions and step derivations.',
       attachedAnswerSheet.trim() || 'Aravind_Kumar_AnswerSheet.pdf',
-      attachedAnswerSize.trim() || '2.4 MB · 5 pages'
+      attachedAnswerSize.trim() || '2.4 MB · 5 pages',
+      attachedAnswerUrl
     );
     setActiveSubmission(null);
     setSubmissionNote('');
+    setAttachedAnswerUrl(undefined);
   };
 
   const handleDownloadFile = (filename: string, fileType: string) => {
@@ -297,7 +309,18 @@ export const StudentAssignmentsScreen: React.FC = () => {
                     <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
                       <button
                         type="button"
-                        onClick={() => setPreviewQP(item)}
+                        onClick={() => {
+                          if (item.questionPaperUrl) {
+                            setActiveFilePreview({
+                              url: item.questionPaperUrl,
+                              name: item.questionPaperFile || 'Question_Paper.pdf',
+                              title: `Question Paper: ${item.title}`,
+                              size: item.questionPaperSize
+                            });
+                          } else {
+                            setPreviewQP(item);
+                          }
+                        }}
                         className="px-2.5 py-1 bg-white hover:bg-teal-50 text-teal-800 border border-teal-300 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
                       >
                         <Eye className="w-3.5 h-3.5 text-teal-700" />
@@ -305,7 +328,13 @@ export const StudentAssignmentsScreen: React.FC = () => {
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleDownloadFile(item.questionPaperFile!, 'Question Paper')}
+                        onClick={() => {
+                          if (item.questionPaperUrl) {
+                            downloadFile(item.questionPaperUrl, item.questionPaperFile || 'Question_Paper.pdf');
+                          } else {
+                            handleDownloadFile(item.questionPaperFile!, 'Question Paper');
+                          }
+                        }}
                         className="px-2.5 py-1 bg-teal-700 hover:bg-teal-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
                       >
                         <Download className="w-3.5 h-3.5" />
@@ -357,7 +386,18 @@ export const StudentAssignmentsScreen: React.FC = () => {
                         <div className="flex items-center gap-2 self-end sm:self-center">
                           <button
                             type="button"
-                            onClick={() => setPreviewAnswerSheet(item)}
+                            onClick={() => {
+                              if (item.answerSheetUrl) {
+                                setActiveFilePreview({
+                                  url: item.answerSheetUrl,
+                                  name: item.answerSheetFile || 'AnswerSheet.pdf',
+                                  title: `Your Answer Sheet: ${item.title}`,
+                                  size: item.answerSheetSize
+                                });
+                              } else {
+                                setPreviewAnswerSheet(item);
+                              }
+                            }}
                             className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded-lg text-xs font-medium flex items-center gap-1 cursor-pointer"
                           >
                             <Eye className="w-3 h-3 text-slate-500" />
@@ -365,7 +405,13 @@ export const StudentAssignmentsScreen: React.FC = () => {
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleDownloadFile(item.answerSheetFile!, 'Your Answer Sheet')}
+                            onClick={() => {
+                              if (item.answerSheetUrl) {
+                                downloadFile(item.answerSheetUrl, item.answerSheetFile || 'AnswerSheet.pdf');
+                              } else {
+                                handleDownloadFile(item.answerSheetFile!, 'Your Answer Sheet');
+                              }
+                            }}
                             className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded-lg text-xs font-medium flex items-center gap-1 cursor-pointer"
                           >
                             <Download className="w-3 h-3 text-slate-500" />
@@ -467,60 +513,24 @@ export const StudentAssignmentsScreen: React.FC = () => {
                 </div>
               )}
 
-              {/* Upload Scanned Answer Sheet File Box */}
+              {/* Upload Scanned Answer Sheet File Box with Firebase Storage */}
               <div className="p-4 bg-blue-50/60 rounded-xl border border-blue-200 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
-                    <Upload className="w-3.5 h-3.5 text-blue-700" />
-                    <span>Upload Scanned Answer Sheet Document</span>
-                  </span>
-                  <span className="text-[10px] text-blue-700 font-mono font-semibold">PDF / Scanned Booklets</span>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-[11px] font-semibold text-slate-700">Answer Sheet Document Name</label>
-                  <div className="flex items-center gap-2 text-xs text-slate-700 bg-white p-2.5 rounded-lg border border-slate-300">
-                    <Paperclip className="w-4 h-4 text-blue-600 shrink-0" />
-                    <input
-                      type="text"
-                      value={attachedAnswerSheet}
-                      onChange={(e) => setAttachedAnswerSheet(e.target.value)}
-                      placeholder="e.g., Aravind_Kumar_Math_Solutions.pdf"
-                      required
-                      className="font-mono text-xs text-slate-800 bg-transparent focus:outline-hidden w-full"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">File Size & Pages</label>
-                    <input
-                      type="text"
-                      value={attachedAnswerSize}
-                      onChange={(e) => setAttachedAnswerSize(e.target.value)}
-                      placeholder="e.g., 2.4 MB · 5 pages"
-                      className="w-full text-xs border border-slate-300 rounded-lg p-2 bg-white font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">Upload Simulator</label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAttachedAnswerSheet(`Aravind_Verified_AnswerSheet_${Date.now().toString().slice(-4)}.pdf`);
-                        setAttachedAnswerSize('3.1 MB · 6 pages');
-                      }}
-                      className="w-full text-xs font-semibold py-2 px-2 bg-white border border-blue-300 hover:bg-blue-100 text-blue-800 rounded-lg transition-colors cursor-pointer text-center"
-                    >
-                      Browse Device PDF...
-                    </button>
-                  </div>
-                </div>
-
+                <FileUploadInput
+                  label="Upload Scanned Answer Sheet Document"
+                  folder="answer_sheets"
+                  currentFileName={attachedAnswerSheet}
+                  currentFileSize={attachedAnswerSize}
+                  currentFileUrl={attachedAnswerUrl}
+                  onFileUploaded={(res) => {
+                    setAttachedAnswerSheet(res.fileName);
+                    setAttachedAnswerSize(res.fileSizeFormatted);
+                    setAttachedAnswerUrl(res.downloadUrl);
+                  }}
+                  accentColor="blue"
+                  required
+                />
                 <span className="text-[11px] text-slate-500 block">
-                  Tip: Ensure questions are numbered clearly matching the Question Paper layout.
+                  Tip: Upload your handwritten solution as PDF or clear photos (max 10 MB). Ensure questions are numbered clearly.
                 </span>
               </div>
 
@@ -637,7 +647,13 @@ export const StudentAssignmentsScreen: React.FC = () => {
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => handleDownloadFile(previewQP.questionPaperFile || 'Question_Paper.pdf', 'Question Paper')}
+                  onClick={() => {
+                    if (previewQP.questionPaperUrl) {
+                      downloadFile(previewQP.questionPaperUrl, previewQP.questionPaperFile || 'Question_Paper.pdf');
+                    } else {
+                      handleDownloadFile(previewQP.questionPaperFile || 'Question_Paper.pdf', 'Question Paper');
+                    }
+                  }}
                   className="px-4 py-2 bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
@@ -699,7 +715,13 @@ export const StudentAssignmentsScreen: React.FC = () => {
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => handleDownloadFile(previewAnswerSheet.answerSheetFile!, 'Answer Sheet')}
+                onClick={() => {
+                  if (previewAnswerSheet.answerSheetUrl) {
+                    downloadFile(previewAnswerSheet.answerSheetUrl, previewAnswerSheet.answerSheetFile || 'AnswerSheet.pdf');
+                  } else {
+                    handleDownloadFile(previewAnswerSheet.answerSheetFile!, 'Answer Sheet');
+                  }
+                }}
                 className="px-4 py-2 bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
@@ -716,6 +738,16 @@ export const StudentAssignmentsScreen: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Real File Preview Modal */}
+      <FilePreviewModal
+        isOpen={!!activeFilePreview}
+        onClose={() => setActiveFilePreview(null)}
+        fileUrl={activeFilePreview?.url}
+        fileName={activeFilePreview?.name || 'Document'}
+        title={activeFilePreview?.title}
+        fileSize={activeFilePreview?.size}
+      />
     </div>
   );
 };

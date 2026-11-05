@@ -18,6 +18,22 @@ export interface AuthResponse {
   role: UserRole;
 }
 
+export interface UserProfile {
+  uid: string;
+  email: string;
+  fullName: string;
+  role: UserRole;
+  phone?: string;
+  guardianName?: string;
+  guardianPhone?: string;
+  schoolId?: string;
+  studentId?: string;
+  teacherId?: string;
+  parentId?: string;
+  linkedChildIds?: string[];
+  createdAt?: string;
+}
+
 export interface StudentProfile {
   id: string;
   name: string;
@@ -81,6 +97,7 @@ export interface StudentSubmission {
   status: 'SUBMITTED' | 'GRADED';
   answerSheetFile?: string;
   answerSheetSize?: string;
+  answerSheetUrl?: string;
   evaluatedAt?: string;
 }
 
@@ -101,8 +118,10 @@ export interface Assignment {
   referenceFile?: string;
   questionPaperFile?: string;
   questionPaperSize?: string;
+  questionPaperUrl?: string;
   answerSheetFile?: string;
   answerSheetSize?: string;
+  answerSheetUrl?: string;
 }
 
 export interface FeeRecord {
@@ -116,6 +135,12 @@ export interface FeeRecord {
   dueDate: string;
   paymentMethod?: string;
   paidAt?: string;
+  paymentId?: string;
+  razorpayOrderId?: string;
+  approvalStatus?: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
+  manualPaymentClaimed?: boolean;
+  manualPaymentUtr?: string;
+  manualPaymentSubmittedAt?: string;
 }
 
 export interface Announcement {
@@ -130,6 +155,7 @@ export interface Announcement {
 export interface TestResult {
   id: string;
   studentId: string;
+  studentName?: string;
   batchId: string;
   testTitle: string;
   subject: string;
@@ -165,6 +191,8 @@ export interface EducationalResource {
   subject: string;
   type: ResourceType;
   urlOrFilename: string;
+  fileUrl?: string;
+  fileName?: string;
   description: string;
   authorName: string;
   uploadedAt: string;
@@ -217,8 +245,8 @@ export interface ScheduleSlot {
 }
 
 export type StudentNavScreen = 'DASHBOARD' | 'ATTENDANCE' | 'ASSIGNMENTS' | 'CALENDAR' | 'RESOURCES' | 'TESTS' | 'FEES';
-export type TeacherNavScreen = 'BATCHES' | 'CALENDAR' | 'ATTENDANCE' | 'HOMEWORK' | 'RESOURCES' | 'FEE_TRACKER' | 'DOUBTS' | 'SCHOOL' | 'ANALYTICS';
-export type ParentNavScreen = 'OVERVIEW' | 'ATTENDANCE' | 'HOMEWORK' | 'FEES' | 'ACCOUNT';
+export type TeacherNavScreen = 'BATCHES' | 'CALENDAR' | 'ATTENDANCE' | 'HOMEWORK' | 'TESTS' | 'RESOURCES' | 'FEE_TRACKER' | 'DOUBTS' | 'SCHOOL' | 'ANALYTICS';
+export type ParentNavScreen = 'OVERVIEW' | 'ATTENDANCE' | 'HOMEWORK' | 'TESTS' | 'FEES' | 'ACCOUNT';
 
 export interface ParentLinkCode {
   code: string;
@@ -226,6 +254,8 @@ export interface ParentLinkCode {
   studentName: string;
   expiresAt: string;
   createdAt: string;
+  expiresAtMs?: number;
+  used?: boolean;
 }
 
 export interface LinkedParent {
@@ -254,6 +284,10 @@ export interface SchoolInfo {
   teacherCount: number;
   studentCount: number;
   parentCount: number;
+  email?: string;
+  phone?: string;
+  address?: string;
+  academicYear?: string;
 }
 
 export interface SchoolMember {
@@ -264,6 +298,28 @@ export interface SchoolMember {
   isSchoolAdmin: boolean;
   avatarUrl?: string;
   joinedAt: string;
+}
+
+export type MessageChannel = 'SMS' | 'WHATSAPP' | 'FCM_PUSH';
+export type MessageType = 'ATTENDANCE_ALERT' | 'FEE_REMINDER' | 'HOMEWORK' | 'ANNOUNCEMENT';
+export type MessageDeliveryStatus = 'DELIVERED' | 'SENT' | 'FAILED' | 'SIMULATED';
+
+export interface NotificationLog {
+  id: string;
+  channel: MessageChannel;
+  messageType: MessageType;
+  recipientPhone?: string;
+  recipientName?: string;
+  studentId?: string;
+  studentName?: string;
+  title?: string;
+  content: string;
+  provider: 'MSG91' | 'WHATSAPP_CLOUD' | 'FCM' | 'SYSTEM_DISPATCHER';
+  providerMessageId?: string;
+  status: MessageDeliveryStatus;
+  sentAt: string;
+  error?: string;
+  metadata?: Record<string, any>;
 }
 
 

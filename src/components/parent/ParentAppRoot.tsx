@@ -3,6 +3,7 @@ import { useTuition } from '../../context/TuitionContext';
 import { ParentNavScreen, ChildProfile, FeeRecord } from '../../types';
 import { UpiQrPaymentModal } from '../payment/UpiQrPaymentModal';
 import { ChildProgressReportModal } from './ChildProgressReportModal';
+import { GlobalSearchBar, SearchCategory } from '../common/GlobalSearchBar';
 import {
   LayoutDashboard,
   CheckSquare,
@@ -17,7 +18,10 @@ import {
   Plus,
   MessageSquareQuote,
   Building2,
-  Award
+  Award,
+  Calendar,
+  GraduationCap,
+  LogOut
 } from 'lucide-react';
 
 export const ParentAppRoot: React.FC = () => {
@@ -32,9 +36,12 @@ export const ParentAppRoot: React.FC = () => {
     schoolInfo,
     attendanceRecords,
     assignments,
+    submissions,
+    testResults,
     feeRecords,
     batches,
-    payFee
+    payFee,
+    logout
   } = useTuition();
 
   const [selectedScreen, setSelectedScreen] = useState<ParentNavScreen>('OVERVIEW');
@@ -55,7 +62,7 @@ export const ParentAppRoot: React.FC = () => {
     schoolName: schoolInfo.name
   };
 
-  // Filter data for the active child
+  // Strictly filter data for the active child
   const childAttendance = attendanceRecords.filter((r) => r.studentId === activeChild.id);
   const presentCount = childAttendance.filter((r) => r.status === 'PRESENT' || r.status === 'LATE').length;
   const attendanceRate = childAttendance.length > 0
@@ -68,13 +75,44 @@ export const ParentAppRoot: React.FC = () => {
   const totalFeePending = totalFeeDue - totalFeePaid;
   const overdueCount = childFees.filter((f) => f.status === 'OVERDUE').length;
 
-  const childAssignments = assignments;
+  // Strictly scope assignments to the active child's own submissions
+  const childSubmissions = submissions.filter((s) => s.studentId === activeChild.id);
+  const childAssignments = assignments.map((a) => {
+    const sub = childSubmissions.find((s) => s.assignmentId === a.id);
+    if (sub) {
+      return {
+        ...a,
+        isSubmitted: true,
+        scoreEarned: sub.scoreEarned,
+        teacherFeedback: sub.teacherFeedback,
+        submissionDate: sub.submittedAt,
+        answerSheetFile: sub.answerSheetFile,
+        answerSheetSize: sub.answerSheetSize,
+        answerSheetUrl: sub.answerSheetUrl
+      };
+    }
+    return {
+      ...a,
+      isSubmitted: false,
+      scoreEarned: null,
+      teacherFeedback: undefined,
+      submissionDate: undefined
+    };
+  });
   const submittedCount = childAssignments.filter((a) => a.isSubmitted).length;
 
-  const handleLinkChild = (e: React.FormEvent) => {
+  // Strictly filter test results for this child
+  const childTests = testResults.filter((t) => t.studentId === activeChild.id);
+  const averageTestScore = childTests.length > 0
+    ? Math.round(
+        (childTests.reduce((acc, t) => acc + (t.marksScored / t.maxMarks), 0) / childTests.length) * 100
+      )
+    : 92;
+
+  const handleLinkChild = async (e: React.FormEvent) => {
     e.preventDefault();
     setLinkError(null);
-    const res = linkChildWithCode(linkCodeInput);
+    const res = await linkChildWithCode(linkCodeInput);
     if (res.success) {
       setLinkSuccess(res.message);
       setLinkCodeInput('');
@@ -91,23 +129,35 @@ export const ParentAppRoot: React.FC = () => {
     { key: 'OVERVIEW' as ParentNavScreen, label: 'Overview', icon: LayoutDashboard },
     { key: 'ATTENDANCE' as ParentNavScreen, label: 'Attendance', icon: CheckSquare },
     { key: 'HOMEWORK' as ParentNavScreen, label: 'Homework', icon: FileText },
+    { key: 'TESTS' as ParentNavScreen, label: 'Tests', icon: GraduationCap },
     { key: 'FEES' as ParentNavScreen, label: 'Fees', icon: CreditCard },
     { key: 'ACCOUNT' as ParentNavScreen, label: 'Account', icon: User }
   ];
+
+  const handleSearchSelect = (category: SearchCategory) => {
+    if (category === 'STUDENT') setSelectedScreen('OVERVIEW');
+    else if (category === 'BATCH') setSelectedScreen('OVERVIEW');
+    else if (category === 'ASSIGNMENT') setSelectedScreen('HOMEWORK');
+  };
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex flex-col">
       {/* TopAppBar with Parent Theme Color: Indigo/Slate #3949AB */}
       <header className="bg-[#3949AB] text-white shadow-md sticky top-0 z-40">
-        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold tracking-tight">Parent Portal</h1>
-            <span className="text-xs bg-white/20 text-white font-medium px-2 py-0.5 rounded-full hidden sm:inline-block">
+        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 shrink-0">
+            <h1 className="text-lg sm:text-xl font-bold tracking-tight">Parent Portal</h1>
+            <span className="text-xs bg-white/20 text-white font-medium px-2 py-0.5 rounded-full hidden md:inline-block">
               {schoolInfo.name}
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Global Search Bar */}
+          <div className="flex-1 max-w-xs sm:max-w-sm mx-1 sm:mx-2">
+            <GlobalSearchBar onSelectResult={handleSearchSelect} />
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
             {/* Child Selector Dropdown */}
             {linkedChildren.length > 0 && (
               <div className="relative">
@@ -129,11 +179,21 @@ export const ParentAppRoot: React.FC = () => {
             {/* Role switch button to switch to Student or Teacher */}
             <button
               onClick={() => setRole('STUDENT')}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/15 hover:bg-white/25 active:bg-white/30 text-white text-xs font-semibold rounded-lg border border-white/20 transition-colors cursor-pointer"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-white/15 hover:bg-white/25 active:bg-white/30 text-white text-xs font-semibold rounded-lg border border-white/20 transition-colors cursor-pointer"
               title="Switch to Student App"
             >
               <ArrowRightLeft className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Student View</span>
+            </button>
+
+            {/* Sign Out Button */}
+            <button
+              onClick={logout}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-100 hover:text-white text-xs font-semibold rounded-lg border border-rose-400/30 transition-colors cursor-pointer"
+              title="Sign Out"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sign Out</span>
             </button>
           </div>
         </div>
@@ -195,7 +255,7 @@ export const ParentAppRoot: React.FC = () => {
         {selectedScreen === 'OVERVIEW' && (
           <div className="space-y-6">
             {/* Headline Statistics Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-2xs space-y-2">
                 <div className="flex items-center justify-between text-slate-500">
                   <span className="text-xs font-semibold">Attendance Record</span>
@@ -203,21 +263,21 @@ export const ParentAppRoot: React.FC = () => {
                 </div>
                 <div className="flex items-baseline gap-2">
                   <span className="text-2xl font-bold text-slate-900 font-mono">{attendanceRate}%</span>
-                  <span className="text-xs text-slate-500 font-medium">({presentCount} classes attended)</span>
+                  <span className="text-xs text-slate-500 font-medium">({presentCount} classes)</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setSelectedScreen('ATTENDANCE')}
                   className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 pt-1 cursor-pointer"
                 >
-                  <span>View Attendance Log</span>
+                  <span>Attendance Log</span>
                   <span aria-hidden="true">&rarr;</span>
                 </button>
               </div>
 
               <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-2xs space-y-2">
                 <div className="flex items-center justify-between text-slate-500">
-                  <span className="text-xs font-semibold">Homework & Tasks</span>
+                  <span className="text-xs font-semibold">Homework Tasks</span>
                   <FileText className="w-4 h-4 text-blue-600" />
                 </div>
                 <div className="flex items-baseline gap-2">
@@ -229,7 +289,26 @@ export const ParentAppRoot: React.FC = () => {
                   onClick={() => setSelectedScreen('HOMEWORK')}
                   className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 pt-1 cursor-pointer"
                 >
-                  <span>Inspect Homework & Scores</span>
+                  <span>Homework & Tasks</span>
+                  <span aria-hidden="true">&rarr;</span>
+                </button>
+              </div>
+
+              <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-2xs space-y-2">
+                <div className="flex items-center justify-between text-slate-500">
+                  <span className="text-xs font-semibold">Unit Tests & Marks</span>
+                  <GraduationCap className="w-4 h-4 text-purple-600" />
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-slate-900 font-mono">{averageTestScore}%</span>
+                  <span className="text-xs text-slate-500 font-medium">({childTests.length} tests taken)</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedScreen('TESTS')}
+                  className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 pt-1 cursor-pointer"
+                >
+                  <span>View Test Scores</span>
                   <span aria-hidden="true">&rarr;</span>
                 </button>
               </div>
@@ -241,14 +320,14 @@ export const ParentAppRoot: React.FC = () => {
                 </div>
                 <div className="flex items-baseline gap-2">
                   <span className="text-2xl font-bold text-slate-900 font-mono">₹{totalFeePaid.toLocaleString()}</span>
-                  <span className="text-xs text-slate-500 font-medium">paid of ₹{totalFeeDue.toLocaleString()}</span>
+                  <span className="text-xs text-slate-500 font-medium">of ₹{totalFeeDue.toLocaleString()}</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setSelectedScreen('FEES')}
                   className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 pt-1 cursor-pointer"
                 >
-                  <span>Manage Invoices & Pay</span>
+                  <span>Invoices & Pay</span>
                   <span aria-hidden="true">&rarr;</span>
                 </button>
               </div>
@@ -481,7 +560,103 @@ export const ParentAppRoot: React.FC = () => {
           </div>
         )}
 
-        {/* ================= TAB 4: FEES & PAYMENTS ================= */}
+        {/* ================= TAB 4: TESTS & ASSESSMENTS ================= */}
+        {selectedScreen === 'TESTS' && (
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Unit Tests & Assessment Ledger</h3>
+                <p className="text-xs text-slate-500">Official scored assessments and percentile rankings for {activeChild.fullName}</p>
+              </div>
+
+              <div className="flex items-center gap-2 self-start sm:self-center">
+                <button
+                  type="button"
+                  onClick={() => setShowProgressReport(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-xs font-semibold rounded-lg border border-indigo-200 transition-colors cursor-pointer"
+                >
+                  <Award className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Full Progress Dossier</span>
+                </button>
+                <span className="text-xs font-mono text-slate-700 bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 font-bold">
+                  Average: {averageTestScore}%
+                </span>
+              </div>
+            </div>
+
+            {childTests.length === 0 ? (
+              <div className="bg-white rounded-2xl p-8 border border-slate-200 text-center space-y-2">
+                <GraduationCap className="w-10 h-10 text-slate-300 mx-auto" />
+                <p className="text-xs font-semibold text-slate-600">No unit test marks logged yet for this child.</p>
+                <p className="text-[11px] text-slate-400">Tests entered by teachers in Firestore will appear here automatically.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {childTests.map((test) => {
+                  const pct = Math.round((test.marksScored / test.maxMarks) * 100);
+                  return (
+                    <div
+                      key={test.id}
+                      className="bg-white rounded-xl p-5 border border-slate-200 shadow-2xs space-y-3"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-indigo-800 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                              {test.subject}
+                            </span>
+                            <h4 className="font-bold text-slate-900 text-sm sm:text-base">{test.testTitle}</h4>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mt-1">
+                            <span className="flex items-center gap-1">
+                              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                              <span>{test.date}</span>
+                            </span>
+                            <span aria-hidden="true">·</span>
+                            <span>Highest in Batch: <strong className="font-mono text-slate-800">{test.highestBatchMarks}/{test.maxMarks}</strong></span>
+                            <span aria-hidden="true">·</span>
+                            <span>Percentile: <strong className="font-mono text-indigo-700">{test.percentile}%ile</strong></span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-start sm:self-center">
+                          <div className="text-right">
+                            <div className="text-sm font-bold text-slate-900 font-mono">
+                              {test.marksScored} / {test.maxMarks}
+                            </div>
+                            <span
+                              className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
+                                pct >= 85
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                  : pct >= 70
+                                  ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                  : 'bg-amber-50 text-amber-800 border-amber-200'
+                              }`}
+                            >
+                              {pct}% Scored
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {test.remarks && (
+                        <div className="p-3 bg-slate-50 border border-slate-100 rounded-lg text-xs text-slate-700 flex items-start gap-2">
+                          <MessageSquareQuote className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-bold block text-slate-900 mb-0.5">Faculty Evaluation Note:</span>
+                            <p>{test.remarks}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ================= TAB 5: FEES & PAYMENTS ================= */}
         {selectedScreen === 'FEES' && (
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -529,7 +704,22 @@ export const ParentAppRoot: React.FC = () => {
                           <span className="text-indigo-700 font-medium">Via {fee.paymentMethod}</span>
                         </>
                       )}
+                      {fee.paymentId && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="text-emerald-700 font-medium">Razorpay: {fee.paymentId}</span>
+                        </>
+                      )}
                     </div>
+
+                    {fee.manualPaymentClaimed && fee.status !== 'PAID' && (
+                      <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs flex items-center gap-2 mt-2">
+                        <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span>
+                          Manual UPI claim submitted (Ref/UTR: <strong className="font-mono">{fee.manualPaymentUtr || 'Pending'}</strong>). Awaiting teacher approval.
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {fee.status !== 'PAID' ? (
@@ -760,8 +950,10 @@ export const ParentAppRoot: React.FC = () => {
           amount={payingFee.amountDue - payingFee.amountPaid}
           monthYear={payingFee.monthYear}
           onClose={() => setPayingFee(null)}
-          onPaymentSuccess={(method) => {
-            payFee(payingFee.invoiceId, method);
+          onPaymentSuccess={(method, _utr, paymentId) => {
+            if (paymentId) {
+              payFee(payingFee.invoiceId, method, paymentId);
+            }
             setPayingFee(null);
           }}
         />
@@ -783,7 +975,7 @@ export const ParentAppRoot: React.FC = () => {
 
       {/* Bottom NavigationBar */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40 shadow-lg">
-        <div className="max-w-xl mx-auto grid grid-cols-5 h-16">
+        <div className="max-w-xl mx-auto grid grid-cols-6 h-16">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isSelected = selectedScreen === item.key;

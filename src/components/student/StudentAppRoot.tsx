@@ -1,15 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense, lazy } from 'react';
 import { StudentNavScreen } from '../../types';
-import { StudentDashboardScreen } from './StudentDashboardScreen';
-import { StudentAttendanceScreen } from './StudentAttendanceScreen';
-import { StudentAssignmentsScreen } from './StudentAssignmentsScreen';
-import { StudentFeeScreen } from './StudentFeeScreen';
-import { StudentTestsScreen } from './StudentTestsScreen';
-import { SharedResourcesScreen } from '../resources/SharedResourcesScreen';
-import { DynamicScheduleCalendar } from '../calendar/DynamicScheduleCalendar';
 import { NotificationCenterModal } from '../notifications/NotificationCenterModal';
 import { ProfileModal } from '../common/ProfileModal';
+import { GlobalSearchBar, SearchCategory } from '../common/GlobalSearchBar';
 import {
+  Loader2,
   LayoutDashboard,
   CheckSquare,
   FileText,
@@ -19,9 +14,39 @@ import {
   User,
   BookOpen,
   Bell,
-  Calendar
+  Calendar,
+  LogOut
 } from 'lucide-react';
 import { useTuition } from '../../context/TuitionContext';
+
+const StudentDashboardScreen = lazy(() =>
+  import('./StudentDashboardScreen').then((m) => ({ default: m.StudentDashboardScreen }))
+);
+const StudentAttendanceScreen = lazy(() =>
+  import('./StudentAttendanceScreen').then((m) => ({ default: m.StudentAttendanceScreen }))
+);
+const StudentAssignmentsScreen = lazy(() =>
+  import('./StudentAssignmentsScreen').then((m) => ({ default: m.StudentAssignmentsScreen }))
+);
+const StudentFeeScreen = lazy(() =>
+  import('./StudentFeeScreen').then((m) => ({ default: m.StudentFeeScreen }))
+);
+const StudentTestsScreen = lazy(() =>
+  import('./StudentTestsScreen').then((m) => ({ default: m.StudentTestsScreen }))
+);
+const SharedResourcesScreen = lazy(() =>
+  import('../resources/SharedResourcesScreen').then((m) => ({ default: m.SharedResourcesScreen }))
+);
+const DynamicScheduleCalendar = lazy(() =>
+  import('../calendar/DynamicScheduleCalendar').then((m) => ({ default: m.DynamicScheduleCalendar }))
+);
+
+const ComponentLoader: React.FC = () => (
+  <div className="flex flex-col items-center justify-center p-16 text-slate-500">
+    <Loader2 className="w-6 h-6 animate-spin text-blue-600 mb-2" />
+    <span className="text-xs font-medium">Loading View...</span>
+  </div>
+);
 
 export const StudentAppRoot: React.FC = () => {
   const [selectedScreen, setSelectedScreen] = useState<StudentNavScreen>('DASHBOARD');
@@ -33,7 +58,8 @@ export const StudentAppRoot: React.FC = () => {
     unreadNotificationsCount,
     latestNotificationToast,
     dismissToast,
-    markNotificationAsRead
+    markNotificationAsRead,
+    logout
   } = useTuition();
 
   const getScreenTitle = () => {
@@ -65,19 +91,30 @@ export const StudentAppRoot: React.FC = () => {
     { key: 'FEES' as StudentNavScreen, label: 'Fees', icon: CreditCard }
   ];
 
+  const handleSearchSelect = (category: SearchCategory) => {
+    if (category === 'STUDENT') setSelectedScreen('ATTENDANCE');
+    else if (category === 'BATCH') setSelectedScreen('RESOURCES');
+    else if (category === 'ASSIGNMENT') setSelectedScreen('ASSIGNMENTS');
+  };
+
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex flex-col">
       {/* TopAppBar with Android Material3 Color: #1E88E5 */}
       <header className="bg-[#1E88E5] text-white shadow-md sticky top-0 z-40">
-        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold tracking-tight">{getScreenTitle()}</h1>
-            <span className="text-xs bg-white/20 text-white font-medium px-2 py-0.5 rounded-full hidden sm:inline-block">
+        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 shrink-0">
+            <h1 className="text-lg sm:text-xl font-bold tracking-tight">{getScreenTitle()}</h1>
+            <span className="text-xs bg-white/20 text-white font-medium px-2 py-0.5 rounded-full hidden md:inline-block">
               Student App
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Global Search Bar */}
+          <div className="flex-1 max-w-xs sm:max-w-sm mx-1 sm:mx-2">
+            <GlobalSearchBar onSelectResult={handleSearchSelect} />
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
             {/* Notification Bell with Unread Badge */}
             <button
               onClick={() => setShowNotifications(true)}
@@ -95,7 +132,7 @@ export const StudentAppRoot: React.FC = () => {
 
             <button
               onClick={() => setShowProfile(true)}
-              className="hidden sm:flex items-center gap-1.5 text-xs text-blue-100 hover:text-white hover:bg-white/10 px-2.5 py-1.5 rounded-lg border border-transparent hover:border-white/20 transition-all mr-1 font-medium"
+              className="hidden sm:flex items-center gap-1.5 text-xs text-blue-100 hover:text-white hover:bg-white/10 px-2.5 py-1.5 rounded-lg border border-transparent hover:border-white/20 transition-all mr-1 font-medium cursor-pointer"
               title="View Digital Student ID Card"
             >
               <User className="w-3.5 h-3.5" />
@@ -114,11 +151,21 @@ export const StudentAppRoot: React.FC = () => {
             {/* Role switch button to switch to Teacher Console */}
             <button
               onClick={() => setRole('TEACHER')}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/15 hover:bg-white/25 active:bg-white/30 text-white text-xs font-semibold rounded-lg border border-white/20 transition-colors cursor-pointer"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-white/15 hover:bg-white/25 active:bg-white/30 text-white text-xs font-semibold rounded-lg border border-white/20 transition-colors cursor-pointer"
               title="Switch to Teacher Console"
             >
               <ArrowRightLeft className="w-3.5 h-3.5" />
               <span>Teacher Mode</span>
+            </button>
+
+            {/* Sign Out Button */}
+            <button
+              onClick={logout}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-100 hover:text-white text-xs font-semibold rounded-lg border border-rose-400/30 transition-colors cursor-pointer"
+              title="Sign Out"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sign Out</span>
             </button>
           </div>
         </div>
@@ -182,15 +229,17 @@ export const StudentAppRoot: React.FC = () => {
         </div>
       )}
 
-      {/* Main Content Area */}
+      {/* Main Content Area Lazy Loaded */}
       <main className="flex-1">
-        {selectedScreen === 'DASHBOARD' && <StudentDashboardScreen onNavigate={setSelectedScreen} />}
-        {selectedScreen === 'CALENDAR' && <DynamicScheduleCalendar isTeacher={false} />}
-        {selectedScreen === 'ATTENDANCE' && <StudentAttendanceScreen />}
-        {selectedScreen === 'ASSIGNMENTS' && <StudentAssignmentsScreen />}
-        {selectedScreen === 'RESOURCES' && <SharedResourcesScreen isTeacher={false} />}
-        {selectedScreen === 'TESTS' && <StudentTestsScreen />}
-        {selectedScreen === 'FEES' && <StudentFeeScreen />}
+        <Suspense fallback={<ComponentLoader />}>
+          {selectedScreen === 'DASHBOARD' && <StudentDashboardScreen onNavigate={setSelectedScreen} />}
+          {selectedScreen === 'CALENDAR' && <DynamicScheduleCalendar isTeacher={false} />}
+          {selectedScreen === 'ATTENDANCE' && <StudentAttendanceScreen />}
+          {selectedScreen === 'ASSIGNMENTS' && <StudentAssignmentsScreen />}
+          {selectedScreen === 'RESOURCES' && <SharedResourcesScreen isTeacher={false} />}
+          {selectedScreen === 'TESTS' && <StudentTestsScreen />}
+          {selectedScreen === 'FEES' && <StudentFeeScreen />}
+        </Suspense>
       </main>
 
       {/* Student Notification Center Modal */}
@@ -209,7 +258,7 @@ export const StudentAppRoot: React.FC = () => {
         />
       )}
 
-      {/* Bottom NavigationBar (Fixed at bottom like Android Compose NavigationBar) */}
+      {/* Bottom NavigationBar */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40 shadow-lg">
         <div className="max-w-xl mx-auto grid grid-cols-7 h-16">
           {navItems.map((item) => {
@@ -219,7 +268,7 @@ export const StudentAppRoot: React.FC = () => {
               <button
                 key={item.key}
                 onClick={() => setSelectedScreen(item.key)}
-                className={`flex flex-col items-center justify-center gap-0.5 py-1 transition-colors ${
+                className={`flex flex-col items-center justify-center gap-0.5 py-1 transition-colors cursor-pointer ${
                   isSelected ? 'text-[#1E88E5]' : 'text-slate-500 hover:text-slate-800'
                 }`}
               >

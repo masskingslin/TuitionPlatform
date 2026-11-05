@@ -1,0 +1,176 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-\\.]+$');
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasUserDoc() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function getUserRole() {
+      return hasUserDoc() ? getUserData().role : 'STUDENT';
+    }
+
+    function isTeacherOrAdmin() {
+      return isSignedIn() && (getUserRole() == 'TEACHER' || getUserRole() == 'ADMIN');
+    }
+
+    function isLinkedParentOf(studentId) {
+      return isSignedIn() && hasUserDoc() && (
+        getUserData().role == 'PARENT' &&
+        ('linkedChildIds' in getUserData()) &&
+        (studentId in getUserData().linkedChildIds)
+      );
+    }
+
+    function canAccessStudentData(studentId) {
+      return isSignedIn() && (
+        request.auth.uid == studentId ||
+        (hasUserDoc() && 'studentId' in getUserData() && getUserData().studentId == studentId) ||
+        isLinkedParentOf(studentId) ||
+        isTeacherOrAdmin()
+      );
+    }
+
+    // 1. Users collection
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isTeacherOrAdmin());
+      allow list: if isSignedIn();
+      allow create, update: if isSignedIn() && (request.auth.uid == userId || isTeacherOrAdmin());
+      allow delete: if isTeacherOrAdmin();
+    }
+
+    // 2. Batches collection
+    match /batches/{batchId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isTeacherOrAdmin();
+    }
+
+    // 3. Attendance collection
+    match /attendance/{attendanceId} {
+      allow get: if isSignedIn() && canAccessStudentData(resource.data.studentId);
+      allow list: if isSignedIn();
+      allow create, update, delete: if isTeacherOrAdmin();
+    }
+
+    // 4. Assignments collection
+    match /assignments/{assignmentId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isTeacherOrAdmin();
+    }
+
+    // 5. Submissions collection
+    match /submissions/{submissionId} {
+      allow get: if isSignedIn() && (
+        canAccessStudentData(resource.data.studentId) ||
+        isTeacherOrAdmin()
+      );
+      allow list: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        resource.data.studentId == request.auth.uid ||
+        isTeacherOrAdmin()
+      );
+      allow delete: if isTeacherOrAdmin();
+    }
+
+    // 6. Fees collection
+    match /fees/{feeId} {
+      allow get: if isSignedIn() && canAccessStudentData(resource.data.studentId);
+      allow list: if isSignedIn();
+      allow create, delete: if isTeacherOrAdmin();
+      allow update: if isSignedIn();
+    }
+
+    // 7. Announcements collection
+    match /announcements/{announcementId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isTeacherOrAdmin();
+    }
+
+    // 8. Doubts collection
+    match /doubts/{doubtId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isTeacherOrAdmin() || (isSignedIn() && resource.data.studentId == request.auth.uid);
+    }
+
+    // 9. Educational Resources
+    match /resources/{resourceId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isTeacherOrAdmin();
+    }
+
+    // 10. Notifications
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isSignedIn();
+    }
+
+    // 11. Classroom Rooms
+    match /rooms/{roomId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isTeacherOrAdmin();
+    }
+
+    // 12. Schedule slots
+    match /schedule_slots/{slotId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isTeacherOrAdmin();
+    }
+
+    // 13. Parent links
+    match /parent_links/{codeId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isTeacherOrAdmin();
+    }
+
+    // 14. School Info
+    match /school_info/{schoolId} {
+      allow read: if isSignedIn();
+      allow create, update: if isTeacherOrAdmin() || isSignedIn();
+    }
+
+    // 15. School Members
+    match /school_members/{memberId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isTeacherOrAdmin();
+    }
+
+    // 16. Test Results
+    match /test_results/{testId} {
+      allow get: if isSignedIn() && canAccessStudentData(resource.data.studentId);
+      allow list: if isSignedIn();
+      allow create, update, delete: if isTeacherOrAdmin();
+    }
+
+    // 17. Notification & Message Logs (Audit trail for SMS, WhatsApp & FCM)
+    match /notification_logs/{logId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isTeacherOrAdmin();
+    }
+  }
+}

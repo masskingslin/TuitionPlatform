@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { useTuition } from '../../context/TuitionContext';
 import { Assignment, StudentSubmission } from '../../types';
+import { FileUploadInput } from '../common/FileUploadInput';
+import { FilePreviewModal } from '../common/FilePreviewModal';
+import { downloadFile } from '../../services/storageService';
 import {
   Upload,
   CheckCircle2,
   Award,
-  Paperclip,
   Clock,
   Filter,
   FileText,
@@ -25,6 +27,7 @@ export const TeacherAssignmentsScreen: React.FC = () => {
   const [referenceFile, setReferenceFile] = useState('');
   const [questionPaperFile, setQuestionPaperFile] = useState('Math_Standard_Question_Paper_2026.pdf');
   const [questionPaperSize, setQuestionPaperSize] = useState('1.6 MB · 4 pages');
+  const [questionPaperUrl, setQuestionPaperUrl] = useState<string | undefined>(undefined);
   const [publishedNotice, setPublishedNotice] = useState(false);
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(assignments[0] || null);
   const [activeGradingSub, setActiveGradingSub] = useState<StudentSubmission | null>(null);
@@ -35,6 +38,12 @@ export const TeacherAssignmentsScreen: React.FC = () => {
   const [previewQPModal, setPreviewQPModal] = useState<Assignment | null>(null);
   const [inspectAnswerSheetSub, setInspectAnswerSheetSub] = useState<StudentSubmission | null>(null);
   const [downloadToast, setDownloadToast] = useState<string | null>(null);
+  const [activeFilePreview, setActiveFilePreview] = useState<{
+    url?: string;
+    name: string;
+    title: string;
+    size?: string;
+  } | null>(null);
 
   const selectedBatch = batches.find((b) => b.id === selectedBatchId) || batches[0];
 
@@ -52,11 +61,13 @@ export const TeacherAssignmentsScreen: React.FC = () => {
       isSubmitted: false,
       referenceFile: referenceFile.trim() || undefined,
       questionPaperFile: questionPaperFile.trim() || undefined,
-      questionPaperSize: questionPaperSize.trim() || '1.5 MB · 3 pages'
+      questionPaperSize: questionPaperSize.trim() || '1.5 MB · 3 pages',
+      questionPaperUrl: questionPaperUrl
     });
 
     setAssignmentTitle('');
     setAssignmentDesc('');
+    setQuestionPaperUrl(undefined);
     setPublishedNotice(true);
     setTimeout(() => setPublishedNotice(false), 4000);
   };
@@ -196,78 +207,21 @@ export const TeacherAssignmentsScreen: React.FC = () => {
             />
           </div>
 
-          {/* Question Paper Upload Box */}
+          {/* Question Paper Upload Box with Firebase Storage */}
           <div className="bg-teal-50/60 rounded-xl p-4 border border-teal-200/90 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-teal-950">
-                <FileText className="w-4 h-4 text-teal-700 shrink-0" />
-                <span className="text-xs font-bold">Faculty Question Paper Attachment (Required for Students)</span>
-              </div>
-              <span className="text-[10px] font-mono text-teal-800 bg-teal-100/70 px-2 py-0.5 rounded font-semibold">
-                PDF / Scanned Paper
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] font-semibold text-teal-900 mb-1">Question Paper Document Name</label>
-                <div className="flex items-center gap-2 border border-teal-300 rounded-lg px-2.5 py-1.5 bg-white text-xs">
-                  <Paperclip className="w-3.5 h-3.5 text-teal-700 shrink-0" />
-                  <input
-                    type="text"
-                    value={questionPaperFile}
-                    onChange={(e) => setQuestionPaperFile(e.target.value)}
-                    placeholder="e.g., Mathematics_Unit_Test_Paper_2026.pdf"
-                    className="w-full bg-transparent focus:outline-hidden font-mono text-xs text-slate-800"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-teal-900 mb-1">File Size & Page Count</label>
-                <input
-                  type="text"
-                  value={questionPaperSize}
-                  onChange={(e) => setQuestionPaperSize(e.target.value)}
-                  placeholder="e.g., 1.8 MB · 4 pages"
-                  className="w-full text-xs border border-teal-300 rounded-lg p-2 bg-white focus:outline-hidden focus:ring-2 focus:ring-teal-600 font-mono text-slate-800"
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-teal-900">
-              <span className="text-slate-500 font-medium">Quick Presets:</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setQuestionPaperFile('Term_Revision_Math_Question_Paper.pdf');
-                  setQuestionPaperSize('2.2 MB · 6 pages');
-                }}
-                className="px-2 py-0.5 rounded bg-white border border-teal-300 hover:bg-teal-100 text-teal-800 font-medium cursor-pointer transition-colors"
-              >
-                Math Model Paper
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setQuestionPaperFile('Optics_Physics_MidTerm_Exam.pdf');
-                  setQuestionPaperSize('1.9 MB · 4 pages');
-                }}
-                className="px-2 py-0.5 rounded bg-white border border-teal-300 hover:bg-teal-100 text-teal-800 font-medium cursor-pointer transition-colors"
-              >
-                Physics Test Paper
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setQuestionPaperFile('Chemical_Equilibrium_Paper_2026.pdf');
-                  setQuestionPaperSize('1.4 MB · 3 pages');
-                }}
-                className="px-2 py-0.5 rounded bg-white border border-teal-300 hover:bg-teal-100 text-teal-800 font-medium cursor-pointer transition-colors"
-              >
-                Chemistry Exam
-              </button>
-            </div>
+            <FileUploadInput
+              label="Faculty Question Paper Attachment (Required for Students)"
+              folder="question_papers"
+              currentFileName={questionPaperFile}
+              currentFileSize={questionPaperSize}
+              currentFileUrl={questionPaperUrl}
+              onFileUploaded={(res) => {
+                setQuestionPaperFile(res.fileName);
+                setQuestionPaperSize(res.fileSizeFormatted);
+                setQuestionPaperUrl(res.downloadUrl);
+              }}
+              accentColor="teal"
+            />
           </div>
 
           <div>
@@ -420,7 +374,18 @@ export const TeacherAssignmentsScreen: React.FC = () => {
                 {selectedAssignment.questionPaperFile && (
                   <button
                     type="button"
-                    onClick={() => setPreviewQPModal(selectedAssignment)}
+                    onClick={() => {
+                      if (selectedAssignment.questionPaperUrl) {
+                        setActiveFilePreview({
+                          url: selectedAssignment.questionPaperUrl,
+                          name: selectedAssignment.questionPaperFile || 'Question_Paper.pdf',
+                          title: `Question Paper: ${selectedAssignment.title}`,
+                          size: selectedAssignment.questionPaperSize
+                        });
+                      } else {
+                        setPreviewQPModal(selectedAssignment);
+                      }
+                    }}
                     className="px-3 py-1.5 bg-teal-50 text-[#00695C] border border-teal-200 hover:bg-teal-100 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
                   >
                     <Eye className="w-3.5 h-3.5" />
@@ -552,19 +517,45 @@ export const TeacherAssignmentsScreen: React.FC = () => {
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleSimulateDownload(
-                      inspectAnswerSheetSub.answerSheetFile || 'AnswerSheet.pdf',
-                      'Student Answer Sheet'
-                    )
-                  }
-                  className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Download Sheet</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  {inspectAnswerSheetSub.answerSheetUrl && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setActiveFilePreview({
+                          url: inspectAnswerSheetSub.answerSheetUrl,
+                          name: inspectAnswerSheetSub.answerSheetFile || `${inspectAnswerSheetSub.studentName}_AnswerSheet.pdf`,
+                          title: `Student Answer Sheet: ${inspectAnswerSheetSub.studentName}`,
+                          size: inspectAnswerSheetSub.answerSheetSize
+                        })
+                      }
+                      className="px-3 py-1.5 bg-teal-50 border border-teal-200 hover:bg-teal-100 text-[#00695C] text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Preview Real File</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (inspectAnswerSheetSub.answerSheetUrl) {
+                        downloadFile(
+                          inspectAnswerSheetSub.answerSheetUrl,
+                          inspectAnswerSheetSub.answerSheetFile || `${inspectAnswerSheetSub.studentName}_AnswerSheet.pdf`
+                        );
+                      } else {
+                        handleSimulateDownload(
+                          inspectAnswerSheetSub.answerSheetFile || 'AnswerSheet.pdf',
+                          'Student Answer Sheet'
+                        );
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Download Sheet</span>
+                  </button>
+                </div>
               </div>
 
               {/* Simulated Page Content */}
@@ -832,9 +823,13 @@ export const TeacherAssignmentsScreen: React.FC = () => {
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() =>
-                    handleSimulateDownload(previewQPModal.questionPaperFile || 'Question_Paper.pdf', 'Question Paper')
-                  }
+                  onClick={() => {
+                    if (previewQPModal.questionPaperUrl) {
+                      downloadFile(previewQPModal.questionPaperUrl, previewQPModal.questionPaperFile || 'Question_Paper.pdf');
+                    } else {
+                      handleSimulateDownload(previewQPModal.questionPaperFile || 'Question_Paper.pdf', 'Question Paper');
+                    }
+                  }}
                   className="px-4 py-2 bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
@@ -852,6 +847,16 @@ export const TeacherAssignmentsScreen: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Real File Preview Modal */}
+      <FilePreviewModal
+        isOpen={!!activeFilePreview}
+        onClose={() => setActiveFilePreview(null)}
+        fileUrl={activeFilePreview?.url}
+        fileName={activeFilePreview?.name || 'Document'}
+        title={activeFilePreview?.title}
+        fileSize={activeFilePreview?.size}
+      />
     </div>
   );
 };

@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   UserRole,
+  UserProfile,
   StudentProfile,
   TeacherProfile,
   CourseBatch,
@@ -21,16 +22,65 @@ import {
   LinkedParent,
   ChildProfile,
   SchoolInfo,
-  SchoolMember
+  SchoolMember,
+  NotificationLog
 } from '../types';
+import {
+  sendGuardianMessage,
+  SendGuardianMessageParams,
+  SendMessageResult
+} from '../services/messagingService';
+import {
+  dispatchFcmPush,
+  FcmPushParams,
+  FcmPushResult,
+  requestFcmToken
+} from '../services/fcmService';
+import {
+  callCreateParentLinkCode,
+  callLinkChildWithCode,
+  callRegenerateSchoolCodes
+} from '../services/cloudFunctions';
+import {
+  auth,
+  db,
+  OperationType,
+  handleFirestoreError
+} from '../firebase';
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut as firebaseSignOut,
+  onAuthStateChanged,
+  updatePassword as firebaseUpdatePassword,
+  User as FirebaseUser
+} from 'firebase/auth';
+import {
+  collection,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  onSnapshot,
+  writeBatch
+} from 'firebase/firestore';
 
 interface TuitionContextType {
   role: UserRole;
   setRole: (role: UserRole) => void;
+  currentUser: FirebaseUser | null;
+  userProfile: UserProfile | null;
+  authLoading: boolean;
+  loginWithEmail: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  signupWithEmail: (email: string, pass: string, fullName: string, role: UserRole) => Promise<{ success: boolean; error?: string }>;
+  quickDemoLogin: (role: UserRole) => Promise<void>;
+  logout: () => Promise<void>;
   currentStudent: StudentProfile;
   currentTeacher: TeacherProfile;
+  currentParent: { id: string; fullName: string; email: string };
   batches: CourseBatch[];
-  addBatch: (batch: Omit<CourseBatch, 'id'>) => void;
+  addBatch: (batch: Omit<CourseBatch, 'id'>) => Promise<void> | void;
   rooms: ClassroomRoom[];
   scheduleSlots: ScheduleSlot[];
   attendanceRecords: AttendanceRecord[];
@@ -39,6 +89,11 @@ interface TuitionContextType {
   feeRecords: FeeRecord[];
   announcements: Announcement[];
   testResults: TestResult[];
+  addTestResult: (result: Omit<TestResult, 'id'>) => Promise<void> | void;
+  saveBatchTestMarks: (
+    testMeta: { batchId: string; testTitle: string; subject: string; date: string; maxMarks: number },
+    marks: Array<{ studentId: string; studentName?: string; marksScored: number; remarks?: string }>
+  ) => Promise<void>;
   doubts: StudentDoubt[];
   resources: EducationalResource[];
   notifications: StudentNotification[];
@@ -66,32 +121,46 @@ interface TuitionContextType {
     assignmentId: string,
     note?: string,
     answerSheetFile?: string,
-    answerSheetSize?: string
+    answerSheetSize?: string,
+    answerSheetUrl?: string
   ) => void;
   gradeSubmission: (submissionId: string, score: number, feedback: string) => void;
-  payFee: (invoiceId: string, paymentMethod?: string) => void;
+  payFee: (invoiceId: string, paymentMethod?: string, paymentId?: string, razorpayOrderId?: string) => Promise<void> | void;
+  submitManualPayment: (invoiceId: string, utr: string) => Promise<void> | void;
+  approveManualPayment: (invoiceId: string) => Promise<void> | void;
+  rejectManualPayment: (invoiceId: string) => Promise<void> | void;
   addAnnouncement: (announcement: Omit<Announcement, 'id' | 'timestamp'>) => void;
   askDoubt: (doubt: Omit<StudentDoubt, 'id' | 'askedAt' | 'isResolved'>) => void;
   replyDoubt: (doubtId: string, reply: string) => void;
   addResource: (resource: Omit<EducationalResource, 'id' | 'uploadedAt'>) => void;
   deleteResource: (resourceId: string) => void;
   parentLinkCode: ParentLinkCode | null;
-  createParentLinkCode: () => ParentLinkCode;
+  createParentLinkCode: () => Promise<ParentLinkCode> | ParentLinkCode;
   linkedParents: LinkedParent[];
   revokeParent: (parentId: string) => void;
   linkedChildren: ChildProfile[];
   activeChildId: string;
   setActiveChildId: (id: string) => void;
-  linkChildWithCode: (code: string) => { success: boolean; message: string; child?: ChildProfile };
+  linkChildWithCode: (code: string) => Promise<{ success: boolean; message: string; child?: ChildProfile }> | { success: boolean; message: string; child?: ChildProfile };
   unlinkChild: (childId: string) => void;
-  currentParent: { id: string; fullName: string; email: string };
   schoolInfo: SchoolInfo;
   updateSchoolName: (name: string) => void;
-  regenerateSchoolCodes: (which?: 'student' | 'teacher' | 'both') => void;
+  updateSchoolSettings: (updates: Partial<SchoolInfo>) => Promise<void>;
+  regenerateSchoolCodes: (which?: 'student' | 'teacher' | 'both') => Promise<void> | void;
   schoolMembers: SchoolMember[];
+  updateSchoolMemberRole: (memberId: string, role: UserRole, isSchoolAdmin?: boolean) => Promise<void>;
+  deleteSchoolMember: (memberId: string) => Promise<void>;
+  addSchoolMember: (member: Omit<SchoolMember, 'id' | 'joinedAt'>) => Promise<void>;
+  notificationLogs: NotificationLog[];
+  sendGuardianSmsOrWhatsApp: (params: SendGuardianMessageParams) => Promise<SendMessageResult>;
+  sendPushNotification: (params: FcmPushParams) => Promise<FcmPushResult>;
+  requestPushPermissions: () => Promise<string | null>;
+  updateUserProfileData: (updates: { fullName?: string; phone?: string; guardianName?: string; guardianPhone?: string }) => Promise<{ success: boolean; error?: string }>;
+  updateUserPassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
   resetToDefaults: () => void;
 }
 
+// ---------------- Demo Seed Data ----------------
 const initialBatches: CourseBatch[] = [
   {
     id: 'b1',
@@ -758,7 +827,7 @@ const initialParentLinkCode: ParentLinkCode = {
   code: 'P-94821',
   studentId: 's1',
   studentName: 'Aravind Kumar',
-  expiresAt: 'In 48 hours',
+  expiresAt: 'In 24 hours',
   createdAt: 'Today, 08:30 AM'
 };
 
@@ -801,221 +870,589 @@ const initialSchoolInfo: SchoolInfo = {
 };
 
 const initialSchoolMembers: SchoolMember[] = [
-  { id: 't1', fullName: 'Mr. Kingslin', email: 'kingslin@tuitionplatform.internal', role: 'TEACHER', isSchoolAdmin: true, joinedAt: '2026-06-01' },
+  { id: 't1', fullName: 'Mr. Kingslin', email: 'teacher@apex.edu', role: 'TEACHER', isSchoolAdmin: true, joinedAt: '2026-06-01' },
   { id: 't2', fullName: 'Dr. Wilson', email: 'wilson.physics@tuitionplatform.internal', role: 'TEACHER', isSchoolAdmin: false, joinedAt: '2026-06-15' },
   { id: 't3', fullName: 'Ms. Stella', email: 'stella.chemistry@tuitionplatform.internal', role: 'TEACHER', isSchoolAdmin: false, joinedAt: '2026-07-01' },
   { id: 't4', fullName: 'Dr. Preethi', email: 'preethi.biology@tuitionplatform.internal', role: 'TEACHER', isSchoolAdmin: false, joinedAt: '2026-08-01' },
-  { id: 's1', fullName: 'Aravind Kumar', email: 'aravind.k@student.internal', role: 'STUDENT', isSchoolAdmin: false, joinedAt: '2026-08-10' },
+  { id: 's1', fullName: 'Aravind Kumar', email: 'student@apex.edu', role: 'STUDENT', isSchoolAdmin: false, joinedAt: '2026-08-10' },
   { id: 's2', fullName: 'Divya Sharma', email: 'divya.s@student.internal', role: 'STUDENT', isSchoolAdmin: false, joinedAt: '2026-08-12' },
   { id: 's3', fullName: 'Ganesh Raman', email: 'ganesh.r@student.internal', role: 'STUDENT', isSchoolAdmin: false, joinedAt: '2026-08-15' },
-  { id: 'p1', fullName: 'Kumar Raman', email: 'kumar.raman@gmail.com', role: 'PARENT', isSchoolAdmin: false, joinedAt: '2026-08-20' },
-  { id: 'p2', fullName: 'Sunita Sharma', email: 'sunita.sharma@gmail.com', role: 'PARENT', isSchoolAdmin: false, joinedAt: '2026-08-22' }
+  { id: 'p1', fullName: 'Kumar Raman', email: 'parent@apex.edu', role: 'PARENT', isSchoolAdmin: false, joinedAt: '2026-08-20' },
+  { id: 'p2', fullName: 'Sunita Sharma', email: 'sunita.sharma@gmail.com', role: 'PARENT', isSchoolAdmin: false, joinedAt: '2026-08-22' },
+  { id: 'adm-1', fullName: 'Apex Administrator', email: 'admin@apex.edu', role: 'ADMIN', isSchoolAdmin: true, joinedAt: '2026-01-01' }
 ];
 
 const TuitionContext = createContext<TuitionContextType | undefined>(undefined);
 
 export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [role, setRole] = useState<UserRole>(() => {
-    return (localStorage.getItem('tuition_role') as UserRole) || 'STUDENT';
-  });
+  // Auth state
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [authLoading, setAuthLoading] = useState<boolean>(true);
+  const [role, setRoleState] = useState<UserRole>('STUDENT');
 
-  const [batches, setBatches] = useState<CourseBatch[]>(() => {
-    const saved = localStorage.getItem('tuition_batches');
-    return saved ? JSON.parse(saved) : initialBatches;
-  });
-
-  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(() => {
-    const saved = localStorage.getItem('tuition_attendance');
-    return saved ? JSON.parse(saved) : initialAttendanceRecords;
-  });
-
-  const [assignments, setAssignments] = useState<Assignment[]>(() => {
-    const saved = localStorage.getItem('tuition_assignments');
-    return saved ? JSON.parse(saved) : initialAssignments;
-  });
-
-  const [submissions, setSubmissions] = useState<StudentSubmission[]>(() => {
-    const saved = localStorage.getItem('tuition_submissions');
-    return saved ? JSON.parse(saved) : initialSubmissions;
-  });
-
-  const [feeRecords, setFeeRecords] = useState<FeeRecord[]>(() => {
-    const saved = localStorage.getItem('tuition_fees');
-    return saved ? JSON.parse(saved) : initialFeeRecords;
-  });
-
-  const [announcements, setAnnouncements] = useState<Announcement[]>(() => {
-    const saved = localStorage.getItem('tuition_announcements');
-    return saved ? JSON.parse(saved) : initialAnnouncements;
-  });
-
-  const [testResults] = useState<TestResult[]>(() => {
-    const saved = localStorage.getItem('tuition_test_results');
-    return saved ? JSON.parse(saved) : initialTestResults;
-  });
-
-  const [doubts, setDoubts] = useState<StudentDoubt[]>(() => {
-    const saved = localStorage.getItem('tuition_doubts');
-    return saved ? JSON.parse(saved) : initialDoubts;
-  });
-
-  const [resources, setResources] = useState<EducationalResource[]>(() => {
-    const saved = localStorage.getItem('tuition_resources');
-    return saved ? JSON.parse(saved) : initialResources;
-  });
-
-  const [notifications, setNotifications] = useState<StudentNotification[]>(() => {
-    const saved = localStorage.getItem('tuition_notifications');
-    return saved ? JSON.parse(saved) : initialNotifications;
-  });
+  // Firestore live collections state
+  const [batches, setBatches] = useState<CourseBatch[]>(initialBatches);
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(initialAttendanceRecords);
+  const [assignments, setAssignments] = useState<Assignment[]>(initialAssignments);
+  const [submissions, setSubmissions] = useState<StudentSubmission[]>(initialSubmissions);
+  const [feeRecords, setFeeRecords] = useState<FeeRecord[]>(initialFeeRecords);
+  const [announcements, setAnnouncements] = useState<Announcement[]>(initialAnnouncements);
+  const [testResults, setTestResults] = useState<TestResult[]>(initialTestResults);
+  const [doubts, setDoubts] = useState<StudentDoubt[]>(initialDoubts);
+  const [resources, setResources] = useState<EducationalResource[]>(initialResources);
+  const [notifications, setNotifications] = useState<StudentNotification[]>(initialNotifications);
+  const [rooms, setRooms] = useState<ClassroomRoom[]>(initialRooms);
+  const [scheduleSlots, setScheduleSlots] = useState<ScheduleSlot[]>(initialScheduleSlots);
+  const [parentLinkCode, setParentLinkCode] = useState<ParentLinkCode | null>(initialParentLinkCode);
+  const [linkedParents, setLinkedParents] = useState<LinkedParent[]>(initialLinkedParents);
+  const [linkedChildren, setLinkedChildren] = useState<ChildProfile[]>(initialLinkedChildren);
+  const [activeChildId, setActiveChildId] = useState<string>('s1');
+  const [schoolInfo, setSchoolInfo] = useState<SchoolInfo>(initialSchoolInfo);
+  const [schoolMembers, setSchoolMembers] = useState<SchoolMember[]>(initialSchoolMembers);
+  const [notificationLogs, setNotificationLogs] = useState<NotificationLog[]>([]);
 
   const [latestNotificationToast, setLatestNotificationToast] = useState<StudentNotification | null>(null);
+  const seedingInProgress = useRef(false);
 
-  const [rooms, setRooms] = useState<ClassroomRoom[]>(() => {
-    const saved = localStorage.getItem('tuition_rooms');
-    return saved ? JSON.parse(saved) : initialRooms;
-  });
-
-  const [scheduleSlots, setScheduleSlots] = useState<ScheduleSlot[]>(() => {
-    const saved = localStorage.getItem('tuition_schedule_slots');
-    return saved ? JSON.parse(saved) : initialScheduleSlots;
-  });
-
-  const [parentLinkCode, setParentLinkCode] = useState<ParentLinkCode | null>(() => {
-    const saved = localStorage.getItem('tuition_parent_code');
-    return saved ? JSON.parse(saved) : initialParentLinkCode;
-  });
-
-  const [linkedParents, setLinkedParents] = useState<LinkedParent[]>(() => {
-    const saved = localStorage.getItem('tuition_linked_parents');
-    return saved ? JSON.parse(saved) : initialLinkedParents;
-  });
-
-  const [linkedChildren, setLinkedChildren] = useState<ChildProfile[]>(() => {
-    const saved = localStorage.getItem('tuition_linked_children');
-    return saved ? JSON.parse(saved) : initialLinkedChildren;
-  });
-
-  const [activeChildId, setActiveChildId] = useState<string>(() => {
-    return localStorage.getItem('tuition_active_child') || 's1';
-  });
-
-  const [schoolInfo, setSchoolInfo] = useState<SchoolInfo>(() => {
-    const saved = localStorage.getItem('tuition_school_info');
-    return saved ? JSON.parse(saved) : initialSchoolInfo;
-  });
-
-  const [schoolMembers, setSchoolMembers] = useState<SchoolMember[]>(() => {
-    const saved = localStorage.getItem('tuition_school_members');
-    return saved ? JSON.parse(saved) : initialSchoolMembers;
-  });
-
-  const currentParent = {
-    id: 'p1',
-    fullName: 'Kumar Raman (Parent)',
-    email: 'kumar.raman@gmail.com'
+  // Set role wrapper
+  const setRole = (newRole: UserRole) => {
+    setRoleState(newRole);
+    if (currentUser && userProfile) {
+      setUserProfile((prev) => (prev ? { ...prev, role: newRole } : prev));
+      updateDoc(doc(db, 'users', currentUser.uid), { role: newRole }).catch((err) => {
+        console.warn('Could not persist updated role to Firestore user doc:', err);
+      });
+    }
   };
 
+  // Seed initial demo data once to Firestore if school_info/sch-1 does not exist
+  const seedDemoDataOnce = async () => {
+    if (seedingInProgress.current) return;
+    seedingInProgress.current = true;
+    try {
+      const schoolRef = doc(db, 'school_info', 'sch-1');
+      const schoolSnap = await getDoc(schoolRef);
+
+      if (!schoolSnap.exists()) {
+        console.log('Seeding initial demo data to Firestore for Apex Academy...');
+        const batch = writeBatch(db);
+
+        // 1. School Info
+        batch.set(schoolRef, initialSchoolInfo);
+
+        // 2. Batches
+        initialBatches.forEach((b) => {
+          batch.set(doc(db, 'batches', b.id), b);
+        });
+
+        // 3. Rooms
+        initialRooms.forEach((r) => {
+          batch.set(doc(db, 'rooms', r.id), r);
+        });
+
+        // 4. Schedule Slots
+        initialScheduleSlots.forEach((s) => {
+          batch.set(doc(db, 'schedule_slots', s.id), s);
+        });
+
+        // 5. School Members
+        initialSchoolMembers.forEach((m) => {
+          batch.set(doc(db, 'school_members', m.id), m);
+        });
+
+        // 6. Parent Link Code
+        batch.set(doc(db, 'parent_links', initialParentLinkCode.code), {
+          ...initialParentLinkCode,
+          used: false
+        });
+
+        await batch.commit();
+
+        // Secondary batches for larger sets
+        const batch2 = writeBatch(db);
+        initialAttendanceRecords.forEach((a) => {
+          batch2.set(doc(db, 'attendance', a.id), a);
+        });
+        initialAssignments.forEach((asg) => {
+          batch2.set(doc(db, 'assignments', asg.id), asg);
+        });
+        initialSubmissions.forEach((sub) => {
+          batch2.set(doc(db, 'submissions', sub.id), sub);
+        });
+        initialFeeRecords.forEach((f) => {
+          batch2.set(doc(db, 'fees', f.invoiceId), f);
+        });
+        await batch2.commit();
+
+        const batch3 = writeBatch(db);
+        initialAnnouncements.forEach((ann) => {
+          batch3.set(doc(db, 'announcements', ann.id), ann);
+        });
+        initialDoubts.forEach((d) => {
+          batch3.set(doc(db, 'doubts', d.id), d);
+        });
+        initialResources.forEach((res) => {
+          batch3.set(doc(db, 'resources', res.id), res);
+        });
+        initialNotifications.forEach((n) => {
+          batch3.set(doc(db, 'notifications', n.id), n);
+        });
+        initialTestResults.forEach((t) => {
+          batch3.set(doc(db, 'test_results', t.id), t);
+        });
+        await batch3.commit();
+        console.log('Demo data successfully seeded to Firestore.');
+      }
+    } catch (err) {
+      console.warn('Initial demo seeding skipped or handled:', err);
+    } finally {
+      seedingInProgress.current = false;
+    }
+  };
+
+  // Auth Listener
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      setCurrentUser(user);
+      if (user) {
+        try {
+          // Fetch user profile from Firestore doc
+          const userDocRef = doc(db, 'users', user.uid);
+          const snap = await getDoc(userDocRef);
+
+          if (snap.exists()) {
+            const data = snap.data() as UserProfile;
+            setUserProfile(data);
+            if (data.role) {
+              setRoleState(data.role);
+            }
+          } else {
+            // First time user document setup
+            const fallbackRole: UserRole = user.email?.includes('teacher')
+              ? 'TEACHER'
+              : user.email?.includes('parent')
+              ? 'PARENT'
+              : user.email?.includes('admin')
+              ? 'ADMIN'
+              : 'STUDENT';
+
+            const newProfile: UserProfile = {
+              uid: user.uid,
+              email: user.email || '',
+              fullName: user.displayName || user.email?.split('@')[0] || 'User',
+              role: fallbackRole,
+              schoolId: 'sch-1',
+              studentId: fallbackRole === 'STUDENT' ? 's1' : undefined,
+              teacherId: fallbackRole === 'TEACHER' ? 't1' : undefined,
+              parentId: fallbackRole === 'PARENT' ? 'p1' : undefined,
+              linkedChildIds: fallbackRole === 'PARENT' ? ['s1', 's2'] : [],
+              createdAt: new Date().toISOString()
+            };
+            await setDoc(userDocRef, newProfile);
+            setUserProfile(newProfile);
+            setRoleState(fallbackRole);
+          }
+        } catch (err) {
+          console.error('Error fetching/creating user doc in Firestore:', err);
+        }
+
+        // Seed initial school demo data if not yet present
+        seedDemoDataOnce();
+      } else {
+        setUserProfile(null);
+      }
+      setAuthLoading(false);
+    });
+
+    return () => unsubscribeAuth();
+  }, []);
+
+  // Set up Real-time Listeners across all Firestore collections
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const unsubs: (() => void)[] = [];
+
+    // 1. User doc listener
+    const userDocRef = doc(db, 'users', currentUser.uid);
+    unsubs.push(
+      onSnapshot(
+        userDocRef,
+        (snap) => {
+          if (snap.exists()) {
+            const data = snap.data() as UserProfile;
+            setUserProfile(data);
+            if (data.role) {
+              setRoleState(data.role);
+            }
+          }
+        },
+        (err) => handleFirestoreError(err, OperationType.GET, `users/${currentUser.uid}`)
+      )
+    );
+
+    // 2. Batches
+    unsubs.push(
+      onSnapshot(
+        collection(db, 'batches'),
+        (snap) => {
+          if (!snap.empty) {
+            setBatches(snap.docs.map((d) => ({ id: d.id, ...d.data() } as CourseBatch)));
+          }
+        },
+        (err) => handleFirestoreError(err, OperationType.GET, 'batches')
+      )
+    );
+
+    // 3. Attendance
+    unsubs.push(
+      onSnapshot(
+        collection(db, 'attendance'),
+        (snap) => {
+          if (!snap.empty) {
+            setAttendanceRecords(snap.docs.map((d) => ({ id: d.id, ...d.data() } as AttendanceRecord)));
+          }
+        },
+        (err) => handleFirestoreError(err, OperationType.GET, 'attendance')
+      )
+    );
+
+    // 4. Assignments
+    unsubs.push(
+      onSnapshot(
+        collection(db, 'assignments'),
+        (snap) => {
+          if (!snap.empty) {
+            setAssignments(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Assignment)));
+          }
+        },
+        (err) => handleFirestoreError(err, OperationType.GET, 'assignments')
+      )
+    );
+
+    // 5. Submissions
+    unsubs.push(
+      onSnapshot(
+        collection(db, 'submissions'),
+        (snap) => {
+          if (!snap.empty) {
+            setSubmissions(snap.docs.map((d) => ({ id: d.id, ...d.data() } as StudentSubmission)));
+          }
+        },
+        (err) => handleFirestoreError(err, OperationType.GET, 'submissions')
+      )
+    );
+
+    // 6. Fees
+    unsubs.push(
+      onSnapshot(
+        collection(db, 'fees'),
+        (snap) => {
+          if (!snap.empty) {
+            setFeeRecords(snap.docs.map((d) => ({ invoiceId: d.id, ...d.data() } as FeeRecord)));
+          }
+        },
+        (err) => handleFirestoreError(err, OperationType.GET, 'fees')
+      )
+    );
+
+    // 7. Announcements
+    unsubs.push(
+      onSnapshot(
+        collection(db, 'announcements'),
+        (snap) => {
+          if (!snap.empty) {
+            setAnnouncements(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Announcement)));
+          }
+        },
+        (err) => handleFirestoreError(err, OperationType.GET, 'announcements')
+      )
+    );
+
+    // 8. Doubts
+    unsubs.push(
+      onSnapshot(
+        collection(db, 'doubts'),
+        (snap) => {
+          if (!snap.empty) {
+            setDoubts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as StudentDoubt)));
+          }
+        },
+        (err) => handleFirestoreError(err, OperationType.GET, 'doubts')
+      )
+    );
+
+    // 9. Resources
+    unsubs.push(
+      onSnapshot(
+        collection(db, 'resources'),
+        (snap) => {
+          if (!snap.empty) {
+            setResources(snap.docs.map((d) => ({ id: d.id, ...d.data() } as EducationalResource)));
+          }
+        },
+        (err) => handleFirestoreError(err, OperationType.GET, 'resources')
+      )
+    );
+
+    // 10. Notifications
+    unsubs.push(
+      onSnapshot(
+        collection(db, 'notifications'),
+        (snap) => {
+          if (!snap.empty) {
+            setNotifications(snap.docs.map((d) => ({ id: d.id, ...d.data() } as StudentNotification)));
+          }
+        },
+        (err) => handleFirestoreError(err, OperationType.GET, 'notifications')
+      )
+    );
+
+    // 11. Rooms
+    unsubs.push(
+      onSnapshot(
+        collection(db, 'rooms'),
+        (snap) => {
+          if (!snap.empty) {
+            setRooms(snap.docs.map((d) => ({ id: d.id, ...d.data() } as ClassroomRoom)));
+          }
+        },
+        (err) => handleFirestoreError(err, OperationType.GET, 'rooms')
+      )
+    );
+
+    // 12. Schedule slots
+    unsubs.push(
+      onSnapshot(
+        collection(db, 'schedule_slots'),
+        (snap) => {
+          if (!snap.empty) {
+            setScheduleSlots(snap.docs.map((d) => ({ id: d.id, ...d.data() } as ScheduleSlot)));
+          }
+        },
+        (err) => handleFirestoreError(err, OperationType.GET, 'schedule_slots')
+      )
+    );
+
+    // 13. Test Results
+    unsubs.push(
+      onSnapshot(
+        collection(db, 'test_results'),
+        (snap) => {
+          if (!snap.empty) {
+            setTestResults(snap.docs.map((d) => ({ id: d.id, ...d.data() } as TestResult)));
+          }
+        },
+        (err) => handleFirestoreError(err, OperationType.GET, 'test_results')
+      )
+    );
+
+    // 14. School Info
+    unsubs.push(
+      onSnapshot(
+        doc(db, 'school_info', 'sch-1'),
+        (snap) => {
+          if (snap.exists()) {
+            setSchoolInfo(snap.data() as SchoolInfo);
+          }
+        },
+        (err) => handleFirestoreError(err, OperationType.GET, 'school_info/sch-1')
+      )
+    );
+
+    // 15. School Members
+    unsubs.push(
+      onSnapshot(
+        collection(db, 'school_members'),
+        (snap) => {
+          if (!snap.empty) {
+            setSchoolMembers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as SchoolMember)));
+          }
+        },
+        (err) => handleFirestoreError(err, OperationType.GET, 'school_members')
+      )
+    );
+
+    // 16. Parent Links
+    unsubs.push(
+      onSnapshot(
+        collection(db, 'parent_links'),
+        (snap) => {
+          if (!snap.empty) {
+            const firstActive = snap.docs.find((d) => !d.data().used);
+            if (firstActive) {
+              setParentLinkCode(firstActive.data() as ParentLinkCode);
+            }
+          }
+        },
+        (err) => handleFirestoreError(err, OperationType.GET, 'parent_links')
+      )
+    );
+
+    // 17. Notification & Message Logs
+    unsubs.push(
+      onSnapshot(
+        collection(db, 'notification_logs'),
+        (snap) => {
+          if (!snap.empty) {
+            const logs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as NotificationLog));
+            logs.sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
+            setNotificationLogs(logs);
+          }
+        },
+        (err) => console.warn('notification_logs listener warning:', err)
+      )
+    );
+
+    return () => {
+      unsubs.forEach((unsub) => unsub());
+    };
+  }, [currentUser]);
+
+  // Dynamic user profiles based on authenticated user
   const currentStudent: StudentProfile = {
-    id: 's1',
-    name: 'Aravind Kumar',
+    id: userProfile?.studentId || 's1',
+    name: userProfile?.role === 'STUDENT' && userProfile.fullName ? userProfile.fullName : 'Aravind Kumar',
     grade: 'Grade 10',
     section: 'State Board Batch A',
-    guardianName: 'Kumar Raman',
-    guardianPhone: '+91 98765 43210',
+    guardianName: userProfile?.guardianName || 'Kumar Raman',
+    guardianPhone: userProfile?.guardianPhone || '+91 98765 43210',
     enrolledCourses: ['Grade 10 Mathematics', 'Physics Fundamentals', 'Chemistry & Reactions', 'Biology & Life Systems'],
     overallAttendancePercent: 91.4
   };
 
   const currentTeacher: TeacherProfile = {
-    id: 't1',
-    name: 'Mr. Kingslin',
+    id: userProfile?.teacherId || 't1',
+    name:
+      (userProfile?.role === 'TEACHER' || userProfile?.role === 'ADMIN') && userProfile.fullName
+        ? userProfile.fullName
+        : 'Mr. Kingslin',
     subjects: ['Mathematics', 'Advanced Calculus', 'Science Foundation'],
     assignedBatches: ['Grade 10 Mathematics', 'Physics Fundamentals', 'Chemistry & Reactions', 'Biology & Life Systems'],
-    email: 'kingslin@tuitionplatform.internal',
-    phone: '+91 98765 12345'
+    email: userProfile?.email || 'teacher@apex.edu',
+    phone: userProfile?.phone || '+91 98765 12345'
   };
 
-  useEffect(() => {
-    localStorage.setItem('tuition_role', role);
-  }, [role]);
+  const currentParent = {
+    id: userProfile?.parentId || 'p1',
+    fullName: userProfile?.role === 'PARENT' && userProfile.fullName ? userProfile.fullName : 'Kumar Raman (Parent)',
+    email: userProfile?.email || 'parent@apex.edu'
+  };
 
-  useEffect(() => {
-    localStorage.setItem('tuition_batches', JSON.stringify(batches));
-  }, [batches]);
+  // Auth Operations
+  const loginWithEmail = async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      await signInWithEmailAndPassword(auth, email, pass);
+      return { success: true };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Login failed.';
+      return { success: false, error: msg };
+    }
+  };
 
-  useEffect(() => {
-    localStorage.setItem('tuition_attendance', JSON.stringify(attendanceRecords));
-  }, [attendanceRecords]);
+  const signupWithEmail = async (
+    email: string,
+    pass: string,
+    fullName: string,
+    signupRole: UserRole
+  ): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, pass);
+      const user = cred.user;
 
-  useEffect(() => {
-    localStorage.setItem('tuition_assignments', JSON.stringify(assignments));
-  }, [assignments]);
+      const profile: UserProfile = {
+        uid: user.uid,
+        email: user.email || email,
+        fullName,
+        role: signupRole,
+        schoolId: 'sch-1',
+        studentId: signupRole === 'STUDENT' ? `s-${Date.now()}` : undefined,
+        teacherId: signupRole === 'TEACHER' ? `t-${Date.now()}` : undefined,
+        parentId: signupRole === 'PARENT' ? `p-${Date.now()}` : undefined,
+        linkedChildIds: signupRole === 'PARENT' ? ['s1'] : [],
+        createdAt: new Date().toISOString()
+      };
 
-  useEffect(() => {
-    localStorage.setItem('tuition_submissions', JSON.stringify(submissions));
-  }, [submissions]);
+      await setDoc(doc(db, 'users', user.uid), profile);
+      setUserProfile(profile);
+      setRoleState(signupRole);
 
-  useEffect(() => {
-    localStorage.setItem('tuition_fees', JSON.stringify(feeRecords));
-  }, [feeRecords]);
+      // Add to school members roster
+      await setDoc(doc(db, 'school_members', user.uid), {
+        id: user.uid,
+        fullName,
+        email,
+        role: signupRole,
+        isSchoolAdmin: signupRole === 'ADMIN',
+        joinedAt: new Date().toISOString().split('T')[0]
+      });
 
-  useEffect(() => {
-    localStorage.setItem('tuition_announcements', JSON.stringify(announcements));
-  }, [announcements]);
+      return { success: true };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Sign up failed.';
+      return { success: false, error: msg };
+    }
+  };
 
-  useEffect(() => {
-    localStorage.setItem('tuition_doubts', JSON.stringify(doubts));
-  }, [doubts]);
+  const quickDemoLogin = async (targetRole: UserRole) => {
+    const demoCredentials: Record<UserRole, { email: string; pass: string; name: string }> = {
+      STUDENT: { email: 'student@apex.edu', pass: 'student123', name: 'Aravind Kumar' },
+      TEACHER: { email: 'teacher@apex.edu', pass: 'teacher123', name: 'Mr. Kingslin' },
+      PARENT: { email: 'parent@apex.edu', pass: 'parent123', name: 'Kumar Raman' },
+      ADMIN: { email: 'admin@apex.edu', pass: 'admin123', name: 'Apex Administrator' }
+    };
 
-  useEffect(() => {
-    localStorage.setItem('tuition_resources', JSON.stringify(resources));
-  }, [resources]);
+    const cred = demoCredentials[targetRole];
+    try {
+      await signInWithEmailAndPassword(auth, cred.email, cred.pass);
+    } catch {
+      // If user does not exist yet, create them with demo data
+      try {
+        const userCred = await createUserWithEmailAndPassword(auth, cred.email, cred.pass);
+        const profile: UserProfile = {
+          uid: userCred.user.uid,
+          email: cred.email,
+          fullName: cred.name,
+          role: targetRole,
+          schoolId: 'sch-1',
+          studentId: targetRole === 'STUDENT' ? 's1' : undefined,
+          teacherId: targetRole === 'TEACHER' ? 't1' : undefined,
+          parentId: targetRole === 'PARENT' ? 'p1' : undefined,
+          linkedChildIds: targetRole === 'PARENT' ? ['s1', 's2'] : [],
+          createdAt: new Date().toISOString()
+        };
+        await setDoc(doc(db, 'users', userCred.user.uid), profile);
+        setUserProfile(profile);
+        setRoleState(targetRole);
+      } catch (createErr) {
+        console.error('Failed to auto-create demo user:', createErr);
+        throw createErr;
+      }
+    }
+  };
 
-  useEffect(() => {
-    localStorage.setItem('tuition_notifications', JSON.stringify(notifications));
-  }, [notifications]);
+  const logout = async () => {
+    await firebaseSignOut(auth);
+    setCurrentUser(null);
+    setUserProfile(null);
+  };
 
-  useEffect(() => {
-    localStorage.setItem('tuition_rooms', JSON.stringify(rooms));
-  }, [rooms]);
-
-  useEffect(() => {
-    localStorage.setItem('tuition_schedule_slots', JSON.stringify(scheduleSlots));
-  }, [scheduleSlots]);
-
-  useEffect(() => {
-    localStorage.setItem('tuition_parent_code', JSON.stringify(parentLinkCode));
-  }, [parentLinkCode]);
-
-  useEffect(() => {
-    localStorage.setItem('tuition_linked_parents', JSON.stringify(linkedParents));
-  }, [linkedParents]);
-
-  useEffect(() => {
-    localStorage.setItem('tuition_linked_children', JSON.stringify(linkedChildren));
-  }, [linkedChildren]);
-
-  useEffect(() => {
-    localStorage.setItem('tuition_active_child', activeChildId);
-  }, [activeChildId]);
-
-  useEffect(() => {
-    localStorage.setItem('tuition_school_info', JSON.stringify(schoolInfo));
-  }, [schoolInfo]);
-
-  useEffect(() => {
-    localStorage.setItem('tuition_school_members', JSON.stringify(schoolMembers));
-  }, [schoolMembers]);
-
-  const addBatch = (batchData: Omit<CourseBatch, 'id'>) => {
+  // Batches
+  const addBatch = async (batchData: Omit<CourseBatch, 'id'>) => {
+    const newBatchId = `b-${Date.now()}`;
     const newBatch: CourseBatch = {
       ...batchData,
-      id: `b-${Date.now()}`
+      id: newBatchId
     };
     setBatches((prev) => [...prev, newBatch]);
 
-    // Dispatch broadcast notification about new subject class
+    try {
+      await setDoc(doc(db, 'batches', newBatchId), newBatch);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `batches/${newBatchId}`);
+    }
+
     addNotification({
       type: 'GENERAL',
       title: `New Subject Class: ${newBatch.title}`,
@@ -1048,7 +1485,6 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const slotStart = parseTimeToMinutes(slot.startTime);
         const slotEnd = parseTimeToMinutes(slot.endTime);
 
-        // Conflict occurs if intervals overlap: newStart < slotEnd && newEnd > slotStart
         if (newStart < slotEnd && newEnd > slotStart) {
           return { isAvailable: false, conflictingSlot: slot };
         }
@@ -1057,14 +1493,20 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return { isAvailable: true };
   };
 
-  const addScheduleSlot = (slotData: Omit<ScheduleSlot, 'id'>) => {
+  const addScheduleSlot = async (slotData: Omit<ScheduleSlot, 'id'>) => {
+    const slotId = `slot-${Date.now()}`;
     const newSlot: ScheduleSlot = {
       ...slotData,
-      id: `slot-${Date.now()}`
+      id: slotId
     };
     setScheduleSlots((prev) => [newSlot, ...prev]);
 
-    // Dispatch notification to students about class scheduling
+    try {
+      await setDoc(doc(db, 'schedule_slots', slotId), newSlot);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `schedule_slots/${slotId}`);
+    }
+
     addNotification({
       type: 'GENERAL',
       title: `Class Scheduled: ${newSlot.batchTitle}`,
@@ -1076,46 +1518,91 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   };
 
-  const updateScheduleSlot = (id: string, updates: Partial<ScheduleSlot>) => {
+  const updateScheduleSlot = async (id: string, updates: Partial<ScheduleSlot>) => {
     setScheduleSlots((prev) =>
       prev.map((s) => (s.id === id ? { ...s, ...updates } : s))
     );
+    try {
+      await updateDoc(doc(db, 'schedule_slots', id), updates);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `schedule_slots/${id}`);
+    }
   };
 
-  const deleteScheduleSlot = (id: string) => {
+  const deleteScheduleSlot = async (id: string) => {
     setScheduleSlots((prev) => prev.filter((s) => s.id !== id));
+    try {
+      await deleteDoc(doc(db, 'schedule_slots', id));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `schedule_slots/${id}`);
+    }
   };
 
   const unreadNotificationsCount = notifications.filter((n) => !n.read).length;
 
-  const markNotificationAsRead = (id: string) => {
+  const markNotificationAsRead = async (id: string) => {
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true } : n))
     );
+    try {
+      await updateDoc(doc(db, 'notifications', id), { read: true });
+    } catch (err) {
+      console.warn('Could not mark notification as read in Firestore:', err);
+    }
   };
 
-  const markAllNotificationsAsRead = () => {
+  const markAllNotificationsAsRead = async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    try {
+      const batch = writeBatch(db);
+      notifications.filter((n) => !n.read).forEach((n) => {
+        batch.update(doc(db, 'notifications', n.id), { read: true });
+      });
+      await batch.commit();
+    } catch (err) {
+      console.warn('Could not mark all notifications as read in Firestore:', err);
+    }
   };
 
-  const deleteNotification = (id: string) => {
+  const deleteNotification = async (id: string) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
+    try {
+      await deleteDoc(doc(db, 'notifications', id));
+    } catch (err) {
+      console.warn('Could not delete notification in Firestore:', err);
+    }
   };
 
-  const clearAllNotifications = () => {
+  const clearAllNotifications = async () => {
     setNotifications([]);
+    try {
+      const batch = writeBatch(db);
+      notifications.forEach((n) => {
+        batch.delete(doc(db, 'notifications', n.id));
+      });
+      await batch.commit();
+    } catch (err) {
+      console.warn('Could not clear notifications in Firestore:', err);
+    }
   };
 
-  const addNotification = (notif: Omit<StudentNotification, 'id' | 'timestamp' | 'read'>) => {
+  const addNotification = async (notif: Omit<StudentNotification, 'id' | 'timestamp' | 'read'>) => {
+    const notifId = `notif-${Date.now()}`;
     const newNotif: StudentNotification = {
       ...notif,
-      id: `notif-${Date.now()}`,
+      id: notifId,
       timestamp: 'Just now',
       read: false
     };
     setNotifications((prev) => [newNotif, ...prev]);
     setLatestNotificationToast(newNotif);
-    // Auto-dismiss transient toast after 6 seconds
+
+    try {
+      await setDoc(doc(db, 'notifications', notifId), newNotif);
+    } catch (err) {
+      console.warn('Could not save notification to Firestore:', err);
+    }
+
     setTimeout(() => {
       setLatestNotificationToast((curr) => (curr?.id === newNotif.id ? null : curr));
     }, 6000);
@@ -1125,26 +1612,43 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setLatestNotificationToast(null);
   };
 
-  const markAttendance = (request: MarkAttendanceRequest) => {
+  const markAttendance = async (request: MarkAttendanceRequest) => {
     setAttendanceRecords((prev) => {
       const newIds = new Set(request.records.map((r) => `${r.batchId}-${r.studentId}-${r.date}`));
       const filtered = prev.filter((r) => !newIds.has(`${r.batchId}-${r.studentId}-${r.date}`));
       return [...request.records, ...filtered];
     });
+
+    try {
+      const batch = writeBatch(db);
+      request.records.forEach((record) => {
+        const id = record.id || `${record.batchId}-${record.studentId}-${record.date}`;
+        batch.set(doc(db, 'attendance', id), { ...record, id });
+      });
+      await batch.commit();
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'attendance');
+    }
   };
 
-  const addAssignment = (assignmentData: Omit<Assignment, 'id'>) => {
+  const addAssignment = async (assignmentData: Omit<Assignment, 'id'>) => {
+    const asgId = `as-${Date.now()}`;
     const newAssignment: Assignment = {
       ...assignmentData,
-      id: `as-${Date.now()}`,
+      id: asgId,
       submissionsCount: 0
     };
     setAssignments((prev) => [newAssignment, ...prev]);
 
+    try {
+      await setDoc(doc(db, 'assignments', asgId), newAssignment);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `assignments/${asgId}`);
+    }
+
     const targetBatch = batches.find((b) => b.id === assignmentData.batchId);
     const batchTitle = targetBatch ? targetBatch.title : 'All Batches';
 
-    // Alert students about new homework assignment
     addNotification({
       type: 'HOMEWORK_POSTED',
       title: `New Homework: ${assignmentData.title}`,
@@ -1154,13 +1658,24 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       actionScreen: 'ASSIGNMENTS',
       authorName: currentTeacher.name
     });
+
+    // Broadcast FCM Push for homework
+    dispatchFcmPush({
+      title: `New Homework: ${assignmentData.title}`,
+      body: `${assignmentData.subject ? `${assignmentData.subject} · ` : ''}Due: ${assignmentData.dueDate}. Max score: ${assignmentData.maxScore}.`,
+      messageType: 'HOMEWORK',
+      targetRole: 'STUDENT',
+      batchId: assignmentData.batchId,
+      batchTitle
+    }).catch((e) => console.warn('FCM homework push note:', e));
   };
 
-  const submitAssignment = (
+  const submitAssignment = async (
     assignmentId: string,
     note?: string,
     answerSheetFile?: string,
-    answerSheetSize?: string
+    answerSheetSize?: string,
+    answerSheetUrl?: string
   ) => {
     const now = new Date().toLocaleDateString('en-US', {
       month: 'short',
@@ -1182,14 +1697,16 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
               submissionDate: now,
               answerSheetFile: finalAnswerSheetFile,
               answerSheetSize: finalAnswerSheetSize,
+              answerSheetUrl: answerSheetUrl || a.answerSheetUrl,
               submissionsCount: (a.submissionsCount || 0) + 1
             }
           : a
       )
     );
 
+    const subId = `sub-${Date.now()}`;
     const newSub: StudentSubmission = {
-      id: `sub-${Date.now()}`,
+      id: subId,
       assignmentId,
       studentId: currentStudent.id,
       studentName: currentStudent.name,
@@ -1198,24 +1715,30 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       scoreEarned: null,
       status: 'SUBMITTED',
       answerSheetFile: finalAnswerSheetFile,
-      answerSheetSize: finalAnswerSheetSize
+      answerSheetSize: finalAnswerSheetSize,
+      answerSheetUrl: answerSheetUrl || undefined
     };
     setSubmissions((prev) => [newSub, ...prev]);
+
+    try {
+      await setDoc(doc(db, 'submissions', subId), newSub);
+      await updateDoc(doc(db, 'assignments', assignmentId), {
+        isSubmitted: true,
+        submissionNote: note || 'Submitted via Student Portal',
+        submissionDate: now,
+        answerSheetFile: finalAnswerSheetFile,
+        answerSheetSize: finalAnswerSheetSize,
+        ...(answerSheetUrl ? { answerSheetUrl } : {})
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `submissions/${subId}`);
+    }
   };
 
-  const gradeSubmission = (submissionId: string, score: number, feedback: string) => {
+  const gradeSubmission = async (submissionId: string, score: number, feedback: string) => {
     setSubmissions((prev) =>
       prev.map((s) => {
         if (s.id === submissionId) {
-          if (s.studentId === currentStudent.id) {
-            setAssignments((aPrev) =>
-              aPrev.map((a) =>
-                a.id === s.assignmentId
-                  ? { ...a, scoreEarned: score, teacherFeedback: feedback }
-                  : a
-              )
-            );
-          }
           return {
             ...s,
             scoreEarned: score,
@@ -1227,9 +1750,42 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return s;
       })
     );
+
+    const sub = submissions.find((s) => s.id === submissionId);
+    if (sub) {
+      setAssignments((aPrev) =>
+        aPrev.map((a) =>
+          a.id === sub.assignmentId
+            ? { ...a, scoreEarned: score, teacherFeedback: feedback }
+            : a
+        )
+      );
+    }
+
+    try {
+      await updateDoc(doc(db, 'submissions', submissionId), {
+        scoreEarned: score,
+        teacherFeedback: feedback,
+        status: 'GRADED',
+        evaluatedAt: 'Just now'
+      });
+      if (sub) {
+        await updateDoc(doc(db, 'assignments', sub.assignmentId), {
+          scoreEarned: score,
+          teacherFeedback: feedback
+        });
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `submissions/${submissionId}`);
+    }
   };
 
-  const payFee = (invoiceId: string, paymentMethod = 'Online Portal (UPI)') => {
+  const payFee = async (
+    invoiceId: string,
+    paymentMethod = 'Razorpay Checkout',
+    paymentId?: string,
+    razorpayOrderId?: string
+  ) => {
     const nowStr = new Date().toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
@@ -1237,6 +1793,10 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       hour: '2-digit',
       minute: '2-digit'
     });
+
+    const targetFee = feeRecords.find((f) => f.invoiceId === invoiceId);
+    const amount = targetFee ? targetFee.amountDue : 1500;
+
     setFeeRecords((prev) =>
       prev.map((f) =>
         f.invoiceId === invoiceId
@@ -1245,33 +1805,202 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
               status: 'PAID',
               amountPaid: f.amountDue,
               paymentMethod,
-              paidAt: nowStr
+              paidAt: nowStr,
+              paymentId: paymentId || f.paymentId,
+              razorpayOrderId: razorpayOrderId || f.razorpayOrderId,
+              approvalStatus: 'APPROVED',
+              manualPaymentClaimed: false
             }
           : f
       )
     );
+
+    try {
+      await updateDoc(doc(db, 'fees', invoiceId), {
+        status: 'PAID',
+        amountPaid: amount,
+        paymentMethod,
+        paidAt: nowStr,
+        approvalStatus: 'APPROVED',
+        manualPaymentClaimed: false,
+        ...(paymentId ? { paymentId } : {}),
+        ...(razorpayOrderId ? { razorpayOrderId } : {})
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `fees/${invoiceId}`);
+    }
   };
 
-  const addAnnouncement = (item: Omit<Announcement, 'id' | 'timestamp'>) => {
+  const submitManualPayment = async (invoiceId: string, utr: string) => {
+    const nowStr = new Date().toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    const targetFee = feeRecords.find((f) => f.invoiceId === invoiceId);
+
+    setFeeRecords((prev) =>
+      prev.map((f) =>
+        f.invoiceId === invoiceId
+          ? {
+              ...f,
+              manualPaymentClaimed: true,
+              manualPaymentUtr: utr.trim(),
+              approvalStatus: 'PENDING_APPROVAL',
+              manualPaymentSubmittedAt: nowStr,
+              paymentMethod: `Manual UPI (Pending Faculty Approval · UTR: ${utr.trim()})`
+            }
+          : f
+      )
+    );
+
+    try {
+      await updateDoc(doc(db, 'fees', invoiceId), {
+        manualPaymentClaimed: true,
+        manualPaymentUtr: utr.trim(),
+        approvalStatus: 'PENDING_APPROVAL',
+        manualPaymentSubmittedAt: nowStr,
+        paymentMethod: `Manual UPI (Pending Faculty Approval · UTR: ${utr.trim()})`
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `fees/${invoiceId}`);
+    }
+
+    addNotification({
+      type: 'GENERAL',
+      title: 'Manual UPI Payment Submitted for Review',
+      message: `UTR #${utr.trim()} submitted for Invoice #${invoiceId}. Faculty review is pending.`,
+      targetBatchTitle: targetFee?.monthYear || 'Fee Desk',
+      referenceId: invoiceId,
+      actionScreen: 'FEES',
+      authorName: targetFee?.studentName || 'Student'
+    });
+  };
+
+  const approveManualPayment = async (invoiceId: string) => {
+    const nowStr = new Date().toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    const targetFee = feeRecords.find((f) => f.invoiceId === invoiceId);
+    const amount = targetFee ? targetFee.amountDue : 1500;
+    const utr = targetFee?.manualPaymentUtr || 'Verified';
+    const finalMethod = `Manual UPI (Approved by Faculty · UTR: ${utr})`;
+
+    setFeeRecords((prev) =>
+      prev.map((f) =>
+        f.invoiceId === invoiceId
+          ? {
+              ...f,
+              status: 'PAID',
+              amountPaid: f.amountDue,
+              paymentMethod: finalMethod,
+              paidAt: nowStr,
+              approvalStatus: 'APPROVED',
+              manualPaymentClaimed: false
+            }
+          : f
+      )
+    );
+
+    try {
+      await updateDoc(doc(db, 'fees', invoiceId), {
+        status: 'PAID',
+        amountPaid: amount,
+        paymentMethod: finalMethod,
+        paidAt: nowStr,
+        approvalStatus: 'APPROVED',
+        manualPaymentClaimed: false
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `fees/${invoiceId}`);
+    }
+
+    addNotification({
+      type: 'GENERAL',
+      title: 'Tuition Fee Payment Approved',
+      message: `Invoice #${invoiceId} has been verified and marked as PAID. Official receipt is available.`,
+      targetBatchTitle: targetFee?.monthYear || 'Fee Desk',
+      referenceId: invoiceId,
+      actionScreen: 'FEES',
+      authorName: currentTeacher.name
+    });
+  };
+
+  const rejectManualPayment = async (invoiceId: string) => {
+    setFeeRecords((prev) =>
+      prev.map((f) =>
+        f.invoiceId === invoiceId
+          ? {
+              ...f,
+              manualPaymentClaimed: false,
+              manualPaymentUtr: undefined,
+              approvalStatus: 'REJECTED'
+            }
+          : f
+      )
+    );
+
+    try {
+      await updateDoc(doc(db, 'fees', invoiceId), {
+        manualPaymentClaimed: false,
+        manualPaymentUtr: null,
+        approvalStatus: 'REJECTED'
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `fees/${invoiceId}`);
+    }
+  };
+
+  const addAnnouncement = async (item: Omit<Announcement, 'id' | 'timestamp'>) => {
+    const annId = `ann-${Date.now()}`;
     const newAnnouncement: Announcement = {
       ...item,
-      id: `ann-${Date.now()}`,
+      id: annId,
       timestamp: 'Just now'
     };
     setAnnouncements((prev) => [newAnnouncement, ...prev]);
+
+    try {
+      await setDoc(doc(db, 'announcements', annId), newAnnouncement);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `announcements/${annId}`);
+    }
+
+    // Broadcast FCM Push for announcements
+    dispatchFcmPush({
+      title: `Announcement: ${item.title}`,
+      body: item.message,
+      messageType: 'ANNOUNCEMENT',
+      targetRole: 'ALL'
+    }).catch((e) => console.warn('FCM announcement push note:', e));
   };
 
-  const askDoubt = (doubt: Omit<StudentDoubt, 'id' | 'askedAt' | 'isResolved'>) => {
+  const askDoubt = async (doubt: Omit<StudentDoubt, 'id' | 'askedAt' | 'isResolved'>) => {
+    const dbtId = `dbt-${Date.now()}`;
     const newDoubt: StudentDoubt = {
       ...doubt,
-      id: `dbt-${Date.now()}`,
+      id: dbtId,
       askedAt: 'Just now',
       isResolved: false
     };
     setDoubts((prev) => [newDoubt, ...prev]);
+
+    try {
+      await setDoc(doc(db, 'doubts', dbtId), newDoubt);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `doubts/${dbtId}`);
+    }
   };
 
-  const replyDoubt = (doubtId: string, reply: string) => {
+  const replyDoubt = async (doubtId: string, reply: string) => {
     setDoubts((prev) =>
       prev.map((d) =>
         d.id === doubtId
@@ -1285,17 +2014,34 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
           : d
       )
     );
+
+    try {
+      await updateDoc(doc(db, 'doubts', doubtId), {
+        reply,
+        repliedBy: currentTeacher.name,
+        repliedAt: 'Just now',
+        isResolved: true
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `doubts/${doubtId}`);
+    }
   };
 
-  const addResource = (res: Omit<EducationalResource, 'id' | 'uploadedAt'>) => {
+  const addResource = async (res: Omit<EducationalResource, 'id' | 'uploadedAt'>) => {
+    const resId = `res-${Date.now()}`;
     const newRes: EducationalResource = {
       ...res,
-      id: `res-${Date.now()}`,
+      id: resId,
       uploadedAt: 'Just now'
     };
     setResources((prev) => [newRes, ...prev]);
 
-    // Alert students about new shared educational material
+    try {
+      await setDoc(doc(db, 'resources', resId), newRes);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `resources/${resId}`);
+    }
+
     addNotification({
       type: 'RESOURCE_ADDED',
       title: `New Material Shared: ${newRes.title}`,
@@ -1307,76 +2053,67 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   };
 
-  const deleteResource = (resourceId: string) => {
+  const deleteResource = async (resourceId: string) => {
     setResources((prev) => prev.filter((r) => r.id !== resourceId));
+    try {
+      await deleteDoc(doc(db, 'resources', resourceId));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `resources/${resourceId}`);
+    }
   };
 
-  const createParentLinkCode = (): ParentLinkCode => {
-    const randomChars = Math.random().toString(36).substring(2, 7).toUpperCase();
-    const newCode: ParentLinkCode = {
-      code: `P-${randomChars}`,
-      studentId: currentStudent.id,
-      studentName: currentStudent.name,
-      expiresAt: 'In 48 hours',
-      createdAt: 'Just now'
-    };
-    setParentLinkCode(newCode);
-    return newCode;
+  const createParentLinkCode = async (): Promise<ParentLinkCode> => {
+    try {
+      const newCode = await callCreateParentLinkCode(currentStudent.id, currentStudent.name);
+      setParentLinkCode(newCode);
+      return newCode;
+    } catch (err) {
+      console.error('Failed to create parent link code via cloud function:', err);
+      const fallbackCode: ParentLinkCode = {
+        code: `P-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
+        studentId: currentStudent.id,
+        studentName: currentStudent.name,
+        expiresAt: 'In 24 hours',
+        createdAt: 'Just now',
+        used: false
+      };
+      setParentLinkCode(fallbackCode);
+      return fallbackCode;
+    }
   };
 
   const revokeParent = (parentId: string) => {
     setLinkedParents((prev) => prev.filter((p) => p.id !== parentId));
   };
 
-  const linkChildWithCode = (code: string): { success: boolean; message: string; child?: ChildProfile } => {
-    const cleanCode = code.trim().toUpperCase();
-    if (!cleanCode) {
-      return { success: false, message: 'Please enter a 6-character parent link code.' };
-    }
-    // Check if code matches current student code or sample codes
-    if (cleanCode === parentLinkCode?.code || cleanCode === 'P-94821') {
-      const existing = linkedChildren.find((c) => c.id === 's1');
-      if (existing) {
-        return { success: true, message: 'Aravind Kumar is already linked to your account.', child: existing };
+  const linkChildWithCode = async (
+    code: string
+  ): Promise<{ success: boolean; message: string; child?: ChildProfile }> => {
+    try {
+      const parentId = currentUser?.uid || 'p1';
+      const result = await callLinkChildWithCode(code, parentId, schoolInfo.name);
+
+      if (result.success && result.child) {
+        setLinkedChildren((prev) => {
+          if (prev.some((c) => c.id === result.child!.id)) return prev;
+          return [...prev, result.child!];
+        });
+        setActiveChildId(result.child.id);
+
+        if (currentUser) {
+          updateDoc(doc(db, 'users', currentUser.uid), {
+            linkedChildIds: [...linkedChildren.map((c) => c.id), result.child.id]
+          }).catch((err) => console.warn('Could not update user linkedChildIds:', err));
+        }
       }
-      const newChild: ChildProfile = {
-        id: 's1',
-        fullName: 'Aravind Kumar',
-        grade: 'Grade 10',
-        section: 'State Board Batch A',
-        schoolName: schoolInfo.name
+
+      return result;
+    } catch (err: unknown) {
+      return {
+        success: false,
+        message: err instanceof Error ? err.message : 'Failed to validate parent link code.'
       };
-      setLinkedChildren((prev) => [...prev, newChild]);
-      setActiveChildId('s1');
-      return { success: true, message: 'Successfully linked Aravind Kumar!', child: newChild };
-    } else if (cleanCode === 'P-DIVYA' || cleanCode === 'P-72819') {
-      const existing = linkedChildren.find((c) => c.id === 's2');
-      if (existing) {
-        return { success: true, message: 'Divya Sharma is already linked to your account.', child: existing };
-      }
-      const newChild: ChildProfile = {
-        id: 's2',
-        fullName: 'Divya Sharma',
-        grade: 'Grade 10',
-        section: 'State Board Batch A',
-        schoolName: schoolInfo.name
-      };
-      setLinkedChildren((prev) => [...prev, newChild]);
-      setActiveChildId('s2');
-      return { success: true, message: 'Successfully linked Divya Sharma!', child: newChild };
-    } else if (cleanCode.startsWith('P-') && cleanCode.length >= 5) {
-      const customChild: ChildProfile = {
-        id: `s-${Date.now()}`,
-        fullName: `Student (${cleanCode})`,
-        grade: 'Grade 10',
-        section: 'Batch A',
-        schoolName: schoolInfo.name
-      };
-      setLinkedChildren((prev) => [...prev, customChild]);
-      setActiveChildId(customChild.id);
-      return { success: true, message: `Successfully linked child with code ${cleanCode}!`, child: customChild };
     }
-    return { success: false, message: 'Invalid or expired parent link code. Ask your student to generate a fresh code.' };
   };
 
   const unlinkChild = (childId: string) => {
@@ -1389,21 +2126,185 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   };
 
-  const updateSchoolName = (name: string) => {
-    setSchoolInfo((prev) => ({ ...prev, name: name.trim() }));
+  const updateSchoolName = async (name: string) => {
+    const trimmed = name.trim();
+    setSchoolInfo((prev) => ({ ...prev, name: trimmed }));
+    try {
+      await updateDoc(doc(db, 'school_info', 'sch-1'), { name: trimmed });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, 'school_info/sch-1');
+    }
   };
 
-  const regenerateSchoolCodes = (which: 'student' | 'teacher' | 'both' = 'both') => {
-    const randomHex = () => Math.random().toString(36).substring(2, 8).toUpperCase();
-    setSchoolInfo((prev) => ({
-      ...prev,
-      studentCode: which === 'teacher' ? prev.studentCode : `S-${randomHex()}`,
-      teacherCode: which === 'student' ? prev.teacherCode : `T-${randomHex()}`
-    }));
+  const regenerateSchoolCodes = async (which: 'student' | 'teacher' | 'both' = 'both'): Promise<void> => {
+    try {
+      const result = await callRegenerateSchoolCodes(which, {
+        studentCode: schoolInfo.studentCode,
+        teacherCode: schoolInfo.teacherCode
+      });
+      if (result.success) {
+        setSchoolInfo((prev) => ({
+          ...prev,
+          studentCode: result.studentCode,
+          teacherCode: result.teacherCode
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to regenerate school codes via cloud function:', err);
+    }
+  };
+
+  const addTestResult = async (result: Omit<TestResult, 'id'>) => {
+    const id = `test-${Date.now()}`;
+    const newRecord: TestResult = { ...result, id };
+    setTestResults((prev) => [newRecord, ...prev]);
+    try {
+      await setDoc(doc(db, 'test_results', id), newRecord);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `test_results/${id}`);
+    }
+  };
+
+  const saveBatchTestMarks = async (
+    testMeta: { batchId: string; testTitle: string; subject: string; date: string; maxMarks: number },
+    marks: Array<{ studentId: string; studentName?: string; marksScored: number; remarks?: string }>
+  ) => {
+    if (marks.length === 0) return;
+    const highestMarks = Math.max(...marks.map((m) => m.marksScored));
+    const batch = writeBatch(db);
+    const newRecords: TestResult[] = [];
+
+    marks.forEach((entry, idx) => {
+      const belowOrEqual = marks.filter((m) => m.marksScored <= entry.marksScored).length;
+      const percentile = Number(((belowOrEqual / marks.length) * 100).toFixed(1));
+      const testId = `test-${Date.now()}-${idx}`;
+
+      const record: TestResult = {
+        id: testId,
+        studentId: entry.studentId,
+        studentName: entry.studentName,
+        batchId: testMeta.batchId,
+        testTitle: testMeta.testTitle,
+        subject: testMeta.subject,
+        date: testMeta.date,
+        maxMarks: testMeta.maxMarks,
+        marksScored: entry.marksScored,
+        highestBatchMarks: highestMarks,
+        percentile,
+        remarks: entry.remarks || (entry.marksScored / testMeta.maxMarks >= 0.8 ? 'Outstanding performance.' : 'Needs review and practice.')
+      };
+
+      newRecords.push(record);
+      batch.set(doc(db, 'test_results', testId), record);
+    });
+
+    setTestResults((prev) => [...newRecords, ...prev]);
+
+    try {
+      await batch.commit();
+      addNotification({
+        type: 'GENERAL',
+        title: `Test Evaluated: ${testMeta.testTitle}`,
+        message: `${testMeta.subject} scores entered for ${marks.length} students. Top score: ${highestMarks}/${testMeta.maxMarks}.`,
+        targetBatchTitle: testMeta.subject,
+        authorName: currentTeacher.name
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'test_results');
+    }
+  };
+
+  const updateUserProfileData = async (updates: {
+    fullName?: string;
+    phone?: string;
+    guardianName?: string;
+    guardianPhone?: string;
+  }): Promise<{ success: boolean; error?: string }> => {
+    if (!currentUser) return { success: false, error: 'Not authenticated' };
+    try {
+      const filteredUpdates: Record<string, any> = {};
+      if (updates.fullName !== undefined) filteredUpdates.fullName = updates.fullName.trim();
+      if (updates.phone !== undefined) filteredUpdates.phone = updates.phone.trim();
+      if (updates.guardianName !== undefined) filteredUpdates.guardianName = updates.guardianName.trim();
+      if (updates.guardianPhone !== undefined) filteredUpdates.guardianPhone = updates.guardianPhone.trim();
+
+      await updateDoc(doc(db, 'users', currentUser.uid), filteredUpdates);
+      setUserProfile((prev) => (prev ? { ...prev, ...filteredUpdates } : prev));
+
+      if (filteredUpdates.fullName) {
+        await updateDoc(doc(db, 'school_members', currentUser.uid), {
+          fullName: filteredUpdates.fullName
+        }).catch(() => {});
+      }
+
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : 'Failed to update profile' };
+    }
+  };
+
+  const updateUserPassword = async (newPassword: string): Promise<{ success: boolean; error?: string }> => {
+    if (!currentUser) return { success: false, error: 'User is not signed in.' };
+    try {
+      await firebaseUpdatePassword(currentUser, newPassword);
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : 'Password update failed. Please re-authenticate and retry.' };
+    }
+  };
+
+  const updateSchoolMemberRole = async (memberId: string, newRole: UserRole, isSchoolAdmin = false) => {
+    setSchoolMembers((prev) =>
+      prev.map((m) => (m.id === memberId ? { ...m, role: newRole, isSchoolAdmin } : m))
+    );
+    try {
+      await updateDoc(doc(db, 'school_members', memberId), {
+        role: newRole,
+        isSchoolAdmin
+      });
+      await updateDoc(doc(db, 'users', memberId), {
+        role: newRole
+      }).catch(() => {});
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `school_members/${memberId}`);
+    }
+  };
+
+  const deleteSchoolMember = async (memberId: string) => {
+    setSchoolMembers((prev) => prev.filter((m) => m.id !== memberId));
+    try {
+      await deleteDoc(doc(db, 'school_members', memberId));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `school_members/${memberId}`);
+    }
+  };
+
+  const addSchoolMember = async (memberData: Omit<SchoolMember, 'id' | 'joinedAt'>) => {
+    const newId = `usr-${Date.now()}`;
+    const today = new Date().toISOString().split('T')[0];
+    const newMember: SchoolMember = {
+      ...memberData,
+      id: newId,
+      joinedAt: today
+    };
+    setSchoolMembers((prev) => [newMember, ...prev]);
+    try {
+      await setDoc(doc(db, 'school_members', newId), newMember);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `school_members/${newId}`);
+    }
+  };
+
+  const updateSchoolSettings = async (updates: Partial<SchoolInfo>) => {
+    setSchoolInfo((prev) => ({ ...prev, ...updates }));
+    try {
+      await updateDoc(doc(db, 'school_info', 'sch-1'), updates);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, 'school_info/sch-1');
+    }
   };
 
   const resetToDefaults = () => {
-    localStorage.clear();
     setBatches(initialBatches);
     setAttendanceRecords(initialAttendanceRecords);
     setAssignments(initialAssignments);
@@ -1422,6 +2323,19 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setActiveChildId('s1');
     setSchoolInfo(initialSchoolInfo);
     setSchoolMembers(initialSchoolMembers);
+    seedDemoDataOnce();
+  };
+
+  const sendGuardianSmsOrWhatsApp = async (params: SendGuardianMessageParams): Promise<SendMessageResult> => {
+    return await sendGuardianMessage(params);
+  };
+
+  const sendPushNotification = async (params: FcmPushParams): Promise<FcmPushResult> => {
+    return await dispatchFcmPush(params);
+  };
+
+  const requestPushPermissions = async (): Promise<string | null> => {
+    return await requestFcmToken();
   };
 
   return (
@@ -1429,6 +2343,13 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       value={{
         role,
         setRole,
+        currentUser,
+        userProfile,
+        authLoading,
+        loginWithEmail,
+        signupWithEmail,
+        quickDemoLogin,
+        logout,
         currentStudent,
         currentTeacher,
         currentParent,
@@ -1442,6 +2363,8 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         feeRecords,
         announcements,
         testResults,
+        addTestResult,
+        saveBatchTestMarks,
         doubts,
         resources,
         notifications,
@@ -1462,6 +2385,9 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         submitAssignment,
         gradeSubmission,
         payFee,
+        submitManualPayment,
+        approveManualPayment,
+        rejectManualPayment,
         addAnnouncement,
         askDoubt,
         replyDoubt,
@@ -1478,8 +2404,18 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         unlinkChild,
         schoolInfo,
         updateSchoolName,
+        updateSchoolSettings,
         regenerateSchoolCodes,
         schoolMembers,
+        updateSchoolMemberRole,
+        deleteSchoolMember,
+        addSchoolMember,
+        notificationLogs,
+        sendGuardianSmsOrWhatsApp,
+        sendPushNotification,
+        requestPushPermissions,
+        updateUserProfileData,
+        updateUserPassword,
         resetToDefaults
       }}
     >

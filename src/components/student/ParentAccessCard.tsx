@@ -38,13 +38,13 @@ export const ParentAccessCard: React.FC = () => {
             <h4 className="font-bold text-slate-900 text-base">Parent Access & Link Code</h4>
           </div>
           <p className="text-xs text-slate-500">
-            Let a parent follow your attendance, homework and fees. Generate a code and give it to them — it works for 48 hours. They can only view, not change anything.
+            Let a parent follow your attendance, homework and fees. Generate a code and give it to them — it expires in 24 hours and is single-use. They can only view, not change anything.
           </p>
         </div>
 
         <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 self-start sm:self-center shrink-0 flex items-center gap-1">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Read-Only Access</span>
+          <span>Single-Use · 24h</span>
         </span>
       </div>
 
@@ -57,7 +57,7 @@ export const ParentAccessCard: React.FC = () => {
                 {parentLinkCode.code}
               </span>
               <span className="text-[11px] text-slate-500">
-                Valid for 48 hours ({parentLinkCode.expiresAt}). Generating a new code replaces this one.
+                Valid for 24 hours ({parentLinkCode.expiresAt}) · Single-use. Generating a new code replaces this one.
               </span>
             </div>
 

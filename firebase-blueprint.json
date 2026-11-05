@@ -1,0 +1,383 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with authentication details and assigned role",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "fullName": { "type": "string" },
+        "role": { "type": "string", "enum": ["STUDENT", "TEACHER", "PARENT", "ADMIN"] },
+        "schoolId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "parentId": { "type": "string" },
+        "linkedChildIds": { "type": "array" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Batch": {
+      "title": "CourseBatch",
+      "description": "Academic course batches",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "subject": { "type": "string" },
+        "teacherName": { "type": "string" },
+        "scheduleTime": { "type": "string" },
+        "days": { "type": "array" },
+        "activeStudentCount": { "type": "number" },
+        "roomOrMeetingLink": { "type": "string" },
+        "syllabusProgress": { "type": "number" },
+        "nextTopic": { "type": "string" },
+        "gradeLevel": { "type": "string" },
+        "textbookOrSyllabus": { "type": "string" }
+      },
+      "required": ["id", "title", "subject"]
+    },
+    "AttendanceRecord": {
+      "title": "AttendanceRecord",
+      "description": "Student daily attendance log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "batchId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "date": { "type": "string" },
+        "status": { "type": "string", "enum": ["PRESENT", "ABSENT", "LATE", "EXCUSED"] },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "batchId", "studentId", "date", "status"]
+    },
+    "Assignment": {
+      "title": "Assignment",
+      "description": "Homework and coursework assignment",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "batchId": { "type": "string" },
+        "title": { "type": "string" },
+        "subject": { "type": "string" },
+        "description": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "maxScore": { "type": "number" },
+        "isSubmitted": { "type": "boolean" },
+        "scoreEarned": { "type": "number" },
+        "submissionNote": { "type": "string" },
+        "submissionDate": { "type": "string" },
+        "teacherFeedback": { "type": "string" },
+        "submissionsCount": { "type": "number" },
+        "referenceFile": { "type": "string" },
+        "questionPaperFile": { "type": "string" },
+        "questionPaperSize": { "type": "string" },
+        "answerSheetFile": { "type": "string" },
+        "answerSheetSize": { "type": "string" }
+      },
+      "required": ["id", "batchId", "title", "maxScore"]
+    },
+    "Submission": {
+      "title": "StudentSubmission",
+      "description": "Student assignment submission",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "assignmentId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "submittedAt": { "type": "string" },
+        "content": { "type": "string" },
+        "scoreEarned": { "type": "number" },
+        "teacherFeedback": { "type": "string" },
+        "status": { "type": "string", "enum": ["SUBMITTED", "GRADED"] },
+        "answerSheetFile": { "type": "string" },
+        "answerSheetSize": { "type": "string" },
+        "evaluatedAt": { "type": "string" }
+      },
+      "required": ["id", "assignmentId", "studentId", "status"]
+    },
+    "FeeRecord": {
+      "title": "FeeRecord",
+      "description": "Tuition fee ledger entry",
+      "type": "object",
+      "properties": {
+        "invoiceId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "monthYear": { "type": "string" },
+        "amountDue": { "type": "number" },
+        "amountPaid": { "type": "number" },
+        "status": { "type": "string", "enum": ["PAID", "PENDING", "OVERDUE"] },
+        "dueDate": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "paidAt": { "type": "string" }
+      },
+      "required": ["invoiceId", "studentId", "amountDue", "status"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Institution bulletins and notifications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "authorName": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "priority": { "type": "string", "enum": ["HIGH", "NORMAL"] }
+      },
+      "required": ["id", "title", "message"]
+    },
+    "Doubt": {
+      "title": "StudentDoubt",
+      "description": "Student academic question and teacher reply",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "subject": { "type": "string" },
+        "topic": { "type": "string" },
+        "question": { "type": "string" },
+        "askedAt": { "type": "string" },
+        "reply": { "type": "string" },
+        "repliedBy": { "type": "string" },
+        "repliedAt": { "type": "string" },
+        "isResolved": { "type": "boolean" }
+      },
+      "required": ["id", "studentId", "question"]
+    },
+    "Resource": {
+      "title": "EducationalResource",
+      "description": "Study material, video link or notes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "batchId": { "type": "string" },
+        "batchTitle": { "type": "string" },
+        "title": { "type": "string" },
+        "subject": { "type": "string" },
+        "type": { "type": "string", "enum": ["PDF", "VIDEO", "LINK", "CHEATSHEET"] },
+        "urlOrFilename": { "type": "string" },
+        "description": { "type": "string" },
+        "authorName": { "type": "string" },
+        "uploadedAt": { "type": "string" },
+        "fileSizeOrDuration": { "type": "string" },
+        "tags": { "type": "array" }
+      },
+      "required": ["id", "title", "type", "urlOrFilename"]
+    },
+    "Notification": {
+      "title": "StudentNotification",
+      "description": "Personal and broadcast alerts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "read": { "type": "boolean" },
+        "targetBatchTitle": { "type": "string" },
+        "referenceId": { "type": "string" },
+        "actionScreen": { "type": "string" },
+        "authorName": { "type": "string" },
+        "studentId": { "type": "string" }
+      },
+      "required": ["id", "title", "message"]
+    },
+    "Room": {
+      "title": "ClassroomRoom",
+      "description": "Physical lecture room or laboratory",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "building": { "type": "string" },
+        "capacity": { "type": "number" },
+        "equipment": { "type": "array" },
+        "isLab": { "type": "boolean" }
+      },
+      "required": ["id", "name"]
+    },
+    "ScheduleSlot": {
+      "title": "ScheduleSlot",
+      "description": "Class timetable slot with room allocation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "batchId": { "type": "string" },
+        "batchTitle": { "type": "string" },
+        "subject": { "type": "string" },
+        "teacherName": { "type": "string" },
+        "day": { "type": "string" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "displayTime": { "type": "string" },
+        "roomId": { "type": "string" },
+        "roomName": { "type": "string" },
+        "locationNotes": { "type": "string" },
+        "isOnline": { "type": "boolean" },
+        "activeStudents": { "type": "number" }
+      },
+      "required": ["id", "batchId", "day", "startTime", "endTime"]
+    },
+    "ParentLinkCode": {
+      "title": "ParentLinkCode",
+      "description": "Single-use student parent linking code",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "expiresAt": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "used": { "type": "boolean" }
+      },
+      "required": ["code", "studentId"]
+    },
+    "SchoolInfo": {
+      "title": "SchoolInfo",
+      "description": "Institution profile and join codes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "isSchoolAdmin": { "type": "boolean" },
+        "studentCode": { "type": "string" },
+        "teacherCode": { "type": "string" },
+        "teacherCount": { "type": "number" },
+        "studentCount": { "type": "number" },
+        "parentCount": { "type": "number" }
+      },
+      "required": ["id", "name"]
+    },
+    "SchoolMember": {
+      "title": "SchoolMember",
+      "description": "Roster member of the institution",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fullName": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "isSchoolAdmin": { "type": "boolean" },
+        "joinedAt": { "type": "string" }
+      },
+      "required": ["id", "fullName", "email", "role"]
+    },
+    "TestResult": {
+      "title": "TestResult",
+      "description": "Periodic examination test score",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "batchId": { "type": "string" },
+        "testTitle": { "type": "string" },
+        "subject": { "type": "string" },
+        "date": { "type": "string" },
+        "maxMarks": { "type": "number" },
+        "marksScored": { "type": "number" },
+        "highestBatchMarks": { "type": "number" },
+        "percentile": { "type": "number" },
+        "remarks": { "type": "string" }
+      },
+      "required": ["id", "studentId", "marksScored"]
+    },
+    "NotificationLog": {
+      "title": "NotificationLog",
+      "description": "Audit record of SMS, WhatsApp, and FCM Push messages sent",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "channel": { "type": "string", "enum": ["SMS", "WHATSAPP", "FCM_PUSH"] },
+        "messageType": { "type": "string", "enum": ["ATTENDANCE_ALERT", "FEE_REMINDER", "HOMEWORK", "ANNOUNCEMENT"] },
+        "recipientPhone": { "type": "string" },
+        "recipientName": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "provider": { "type": "string" },
+        "providerMessageId": { "type": "string" },
+        "status": { "type": "string", "enum": ["DELIVERED", "SENT", "FAILED", "SIMULATED"] },
+        "sentAt": { "type": "string" }
+      },
+      "required": ["id", "channel", "messageType", "content", "sentAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile collection"
+    },
+    "/batches/{batchId}": {
+      "schema": "Batch",
+      "description": "Course batches collection"
+    },
+    "/attendance/{attendanceId}": {
+      "schema": "AttendanceRecord",
+      "description": "Attendance logs"
+    },
+    "/assignments/{assignmentId}": {
+      "schema": "Assignment",
+      "description": "Assignments and homework"
+    },
+    "/submissions/{submissionId}": {
+      "schema": "Submission",
+      "description": "Student homework submissions"
+    },
+    "/fees/{feeId}": {
+      "schema": "FeeRecord",
+      "description": "Fee records and invoices"
+    },
+    "/announcements/{announcementId}": {
+      "schema": "Announcement",
+      "description": "School wide announcements"
+    },
+    "/doubts/{doubtId}": {
+      "schema": "Doubt",
+      "description": "Student questions and answers"
+    },
+    "/resources/{resourceId}": {
+      "schema": "Resource",
+      "description": "Shared educational materials"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "Student and faculty notifications"
+    },
+    "/rooms/{roomId}": {
+      "schema": "Room",
+      "description": "Classroom and lab rooms"
+    },
+    "/schedule_slots/{slotId}": {
+      "schema": "ScheduleSlot",
+      "description": "Timetable schedule slots"
+    },
+    "/parent_links/{codeId}": {
+      "schema": "ParentLinkCode",
+      "description": "Parent link codes for linking parents with students"
+    },
+    "/school_info/{schoolId}": {
+      "schema": "SchoolInfo",
+      "description": "School settings and configuration"
+    },
+    "/school_members/{memberId}": {
+      "schema": "SchoolMember",
+      "description": "School faculty and student roster"
+    },
+    "/test_results/{testId}": {
+      "schema": "TestResult",
+      "description": "Student test scores"
+    },
+    "/notification_logs/{logId}": {
+      "schema": "NotificationLog",
+      "description": "Audit log of dispatched SMS, WhatsApp, and FCM Push messages"
+    }
+  }
+}

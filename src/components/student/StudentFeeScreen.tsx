@@ -2,10 +2,10 @@ import React, { useState } from 'react';
 import { useTuition } from '../../context/TuitionContext';
 import { FeePaymentStatus, FeeRecord } from '../../types';
 import { UpiQrPaymentModal } from '../payment/UpiQrPaymentModal';
-import { CheckCircle2, Receipt, Printer, QrCode } from 'lucide-react';
+import { CheckCircle2, Receipt, Printer, QrCode, Clock, ShieldCheck } from 'lucide-react';
 
 export const StudentFeeScreen: React.FC = () => {
-  const { feeRecords, payFee, currentStudent } = useTuition();
+  const { feeRecords, currentStudent } = useTuition();
   const [selectedInvoice, setSelectedInvoice] = useState<FeeRecord | null>(null);
   const [receiptModal, setReceiptModal] = useState<FeeRecord | null>(null);
   const [paymentSuccess, setPaymentSuccess] = useState<string | null>(null);
@@ -29,25 +29,28 @@ export const StudentFeeScreen: React.FC = () => {
     }
   };
 
-  const handlePaymentSuccess = (paymentMethod: string, utr: string) => {
+  const handlePaymentSuccess = (paymentMethod: string, utr: string, paymentId?: string) => {
     if (!selectedInvoice) return;
-    const finalMethod = `${paymentMethod} (UTR: ${utr})`;
-    payFee(selectedInvoice.invoiceId, finalMethod);
     setPaymentSuccess(selectedInvoice.invoiceId);
     setLastUtr(utr);
 
-    // Auto-open receipt for verified payment
-    const updatedRecord: FeeRecord = {
-      ...selectedInvoice,
-      status: 'PAID',
-      amountPaid: selectedInvoice.amountDue,
-      paymentMethod: finalMethod,
-      paidAt: 'Just now'
-    };
-
-    setSelectedInvoice(null);
-    setReceiptModal(updatedRecord);
-    setTimeout(() => setPaymentSuccess(null), 5000);
+    if (paymentId) {
+      // Verified Razorpay transaction: receipt is available immediately
+      const updatedRecord: FeeRecord = {
+        ...selectedInvoice,
+        status: 'PAID',
+        amountPaid: selectedInvoice.amountDue,
+        paymentMethod: paymentMethod,
+        paymentId: paymentId,
+        paidAt: 'Just now'
+      };
+      setSelectedInvoice(null);
+      setReceiptModal(updatedRecord);
+    } else {
+      // Manual UPI claim submitted for teacher approval
+      setSelectedInvoice(null);
+    }
+    setTimeout(() => setPaymentSuccess(null), 6000);
   };
 
   return (
@@ -60,7 +63,7 @@ export const StudentFeeScreen: React.FC = () => {
               <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Tuition Account Summary</span>
               <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-semibold px-2 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1">
                 <QrCode className="w-3 h-3" />
-                <span>UPI & Bharat QR Enabled</span>
+                <span>Razorpay & UPI Enabled</span>
               </span>
             </div>
             <h2 className="text-xl font-bold tracking-tight">Tuition Fee Ledger</h2>
@@ -90,7 +93,7 @@ export const StudentFeeScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Quick UPI QR Scan CTA Bar if fee pending */}
+        {/* Quick Razorpay / UPI CTA Bar if fee pending */}
         {pendingInvoice && (
           <div className="mt-5 pt-4 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-blue-950/40 -mx-6 -mb-6 p-4 px-6 rounded-b-2xl">
             <div className="flex items-center gap-2.5">
@@ -98,7 +101,7 @@ export const StudentFeeScreen: React.FC = () => {
                 <QrCode className="w-5 h-5" />
               </div>
               <div className="text-xs">
-                <span className="font-bold text-white block">Quick Pay via UPI QR / GPay / PhonePe</span>
+                <span className="font-bold text-white block">Instant Online Pay via Razorpay / UPI / QR</span>
                 <span className="text-slate-400">{pendingInvoice.monthYear} installment due on {pendingInvoice.dueDate}</span>
               </div>
             </div>
@@ -108,29 +111,31 @@ export const StudentFeeScreen: React.FC = () => {
               className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5 self-start sm:self-center"
             >
               <QrCode className="w-3.5 h-3.5" />
-              <span>Scan QR to Pay ₹{pendingInvoice.amountDue.toLocaleString()}</span>
+              <span>Pay Online ₹{pendingInvoice.amountDue.toLocaleString()}</span>
             </button>
           </div>
         )}
       </div>
 
       {paymentSuccess && (
-        <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-900 text-xs flex items-center justify-between shadow-2xs">
+        <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>
-              UPI payment verified successfully! Ref/UTR: <span className="font-mono font-bold">{lastUtr}</span>.
+              Payment action processed successfully! Reference / Payment ID: <span className="font-mono font-bold">{lastUtr}</span>.
             </span>
           </div>
-          <button
-            onClick={() => {
-              const inv = studentFees.find((f) => f.invoiceId === paymentSuccess);
-              if (inv) setReceiptModal(inv);
-            }}
-            className="font-bold underline text-emerald-800 hover:text-emerald-950"
-          >
-            View Official Receipt
-          </button>
+          {receiptModal && (
+            <button
+              onClick={() => {
+                const inv = studentFees.find((f) => f.invoiceId === paymentSuccess);
+                if (inv) setReceiptModal(inv);
+              }}
+              className="font-bold underline text-emerald-800 hover:text-emerald-950 self-start sm:self-auto"
+            >
+              View Official Receipt
+            </button>
+          )}
         </div>
       )}
 
@@ -169,6 +174,24 @@ export const StudentFeeScreen: React.FC = () => {
                   <span className="text-slate-800 font-semibold">{fee.paymentMethod}</span>
                 </div>
               )}
+              {fee.paymentId && (
+                <div className="text-[11px] text-emerald-800 font-mono flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>Razorpay ID:</span>
+                  <span className="font-semibold text-emerald-900">{fee.paymentId}</span>
+                </div>
+              )}
+
+              {/* Manual payment claim pending banner */}
+              {fee.manualPaymentClaimed && fee.status !== 'PAID' && (
+                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs flex items-center gap-2 mt-2">
+                  <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                  <div>
+                    <span className="font-bold block">Manual UPI Claim Submitted (Awaiting Teacher Approval)</span>
+                    <span className="text-slate-600">UTR / Ref: <span className="font-mono font-bold text-slate-800">{fee.manualPaymentUtr || 'Pending'}</span></span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-2.5 self-end sm:self-center">
@@ -190,7 +213,7 @@ export const StudentFeeScreen: React.FC = () => {
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs"
                 >
                   <QrCode className="w-3.5 h-3.5" />
-                  <span>Pay with UPI / QR</span>
+                  <span>{fee.manualPaymentClaimed ? 'Re-open Payment' : 'Pay Online / UPI'}</span>
                 </button>
               )}
             </div>
@@ -198,7 +221,7 @@ export const StudentFeeScreen: React.FC = () => {
         ))}
       </div>
 
-      {/* UPI and QR Payment Modal */}
+      {/* Razorpay & UPI Payment Modal */}
       {selectedInvoice && (
         <UpiQrPaymentModal
           invoiceId={selectedInvoice.invoiceId}
@@ -246,8 +269,14 @@ export const StudentFeeScreen: React.FC = () => {
               </div>
               <div>
                 <span className="text-slate-500 block">Payment Mode:</span>
-                <span className="font-medium text-slate-800">{receiptModal.paymentMethod || 'UPI (Bharat QR)'}</span>
+                <span className="font-medium text-slate-800">{receiptModal.paymentMethod || 'Razorpay Online Checkout'}</span>
               </div>
+              {receiptModal.paymentId && (
+                <div className="col-span-2">
+                  <span className="text-slate-500 block">Razorpay Payment ID:</span>
+                  <span className="font-mono font-bold text-slate-900">{receiptModal.paymentId}</span>
+                </div>
+              )}
             </div>
 
             <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
@@ -275,8 +304,8 @@ export const StudentFeeScreen: React.FC = () => {
 
             <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-900 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>NPCI Bharat UPI Verified Transaction</span>
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Verified Online Digital Payment</span>
               </div>
               <span className="font-mono text-[11px] font-semibold text-emerald-800">Status: SUCCESS</span>
             </div>

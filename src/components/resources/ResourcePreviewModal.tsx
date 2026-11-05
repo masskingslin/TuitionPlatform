@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { EducationalResource } from '../../types';
+import { downloadFile } from '../../services/storageService';
 import {
   X,
   ExternalLink,
@@ -390,6 +391,66 @@ export const ResourcePreviewModal: React.FC<ResourcePreviewModalProps> = ({
       );
     }
 
+    // Real File Viewer (when uploaded to Firebase Storage)
+    if (resource.fileUrl) {
+      const isPdf =
+        resource.fileUrl.includes('.pdf') ||
+        (resource.fileName || resource.urlOrFilename).toLowerCase().endsWith('.pdf');
+      const isImg =
+        resource.fileUrl.startsWith('data:image/') ||
+        /\.(png|jpe?g|webp|gif|svg)$/i.test(resource.fileName || resource.urlOrFilename);
+
+      return (
+        <div className="flex-1 flex flex-col bg-slate-900 rounded-xl overflow-hidden border border-slate-700 min-h-[440px]">
+          <div className="bg-slate-950 px-4 py-2.5 flex items-center justify-between text-white text-xs border-b border-slate-800">
+            <span className="font-mono text-[11px] text-slate-300 truncate max-w-sm">
+              {resource.fileName || resource.urlOrFilename}
+            </span>
+            <div className="flex items-center gap-2">
+              <a
+                href={resource.fileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Open in Tab</span>
+              </a>
+              <button
+                type="button"
+                onClick={() => downloadFile(resource.fileUrl!, resource.fileName || resource.urlOrFilename)}
+                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download</span>
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 p-3 sm:p-5 flex items-center justify-center bg-slate-900/60 overflow-auto">
+            {isPdf ? (
+              <iframe
+                src={resource.fileUrl}
+                title={resource.title}
+                className="w-full h-full min-h-[500px] bg-white rounded-lg border border-slate-700 shadow-xl"
+              />
+            ) : isImg ? (
+              <img
+                src={resource.fileUrl}
+                alt={resource.title}
+                className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-xl"
+              />
+            ) : (
+              <iframe
+                src={resource.fileUrl}
+                title={resource.title}
+                className="w-full h-full min-h-[500px] bg-white rounded-lg border border-slate-700 shadow-xl"
+              />
+            )}
+          </div>
+        </div>
+      );
+    }
+
     // 4. PDF HANDOUTS & EXAM BOOKLETS (Interactive Document Viewport with Page Flip & Zoom)
     return (
       <div className="flex-1 flex flex-col bg-slate-800 rounded-xl overflow-hidden border border-slate-700 min-h-[420px]">
@@ -706,8 +767,28 @@ export const ResourcePreviewModal: React.FC<ResourcePreviewModalProps> = ({
               Close
             </button>
 
-            {/* Launch in new tab */}
-            {isWebUrl && (
+            {/* Launch or download real file */}
+            {resource.fileUrl ? (
+              <>
+                <a
+                  href={resource.fileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold rounded-lg shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Open Real File</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => downloadFile(resource.fileUrl!, resource.fileName || resource.urlOrFilename)}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 active:bg-black text-white font-bold rounded-lg shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Real File</span>
+                </button>
+              </>
+            ) : isWebUrl ? (
               <a
                 href={getCleanUrl(resource.urlOrFilename)}
                 target="_blank"
@@ -717,21 +798,17 @@ export const ResourcePreviewModal: React.FC<ResourcePreviewModalProps> = ({
                 <ExternalLink className="w-3.5 h-3.5" />
                 <span>Launch in Tab</span>
               </a>
-            )}
-
-            {/* Download file for PDF/Cheatsheet */}
-            {!isWebUrl && (
-              <a
-                href={`#download-${resource.id}`}
-                onClick={(e) => {
-                  e.preventDefault();
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
                   alert(`Downloading offline copy: "${resource.urlOrFilename}"`);
                 }}
                 className="px-4 py-2 bg-slate-900 hover:bg-slate-800 active:bg-black text-white font-bold rounded-lg shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Download Offline Copy</span>
-              </a>
+              </button>
             )}
           </div>
         </div>

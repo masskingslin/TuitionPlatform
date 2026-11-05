@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useTuition } from '../../context/TuitionContext';
 import { EducationalResource, ResourceType } from '../../types';
 import { ResourcePreviewModal } from './ResourcePreviewModal';
+import { FileUploadInput } from '../common/FileUploadInput';
+import { downloadFile } from '../../services/storageService';
 import {
   FileText,
   ExternalLink,
@@ -37,6 +39,8 @@ export const SharedResourcesScreen: React.FC<SharedResourcesScreenProps> = ({ is
   const [newType, setNewType] = useState<ResourceType>('PDF');
   const [newBatchId, setNewBatchId] = useState('ALL');
   const [newUrlOrFilename, setNewUrlOrFilename] = useState('');
+  const [newFileUrl, setNewFileUrl] = useState<string | undefined>(undefined);
+  const [newFileName, setNewFileName] = useState<string | undefined>(undefined);
   const [newDescription, setNewDescription] = useState('');
   const [newSizeOrDuration, setNewSizeOrDuration] = useState('2.5 MB · PDF');
   const [newTags, setNewTags] = useState('Chapter 4, Revision');
@@ -67,6 +71,8 @@ export const SharedResourcesScreen: React.FC<SharedResourcesScreenProps> = ({ is
       subject: newSubject,
       type: newType,
       urlOrFilename: newUrlOrFilename.trim(),
+      fileUrl: newFileUrl,
+      fileName: newFileName || newUrlOrFilename.trim(),
       description: newDescription.trim() || 'Reference educational study material provided by faculty.',
       authorName: currentTeacher.name,
       fileSizeOrDuration: newSizeOrDuration.trim() || 'Document',
@@ -78,6 +84,8 @@ export const SharedResourcesScreen: React.FC<SharedResourcesScreenProps> = ({ is
 
     setNewTitle('');
     setNewUrlOrFilename('');
+    setNewFileUrl(undefined);
+    setNewFileName(undefined);
     setNewDescription('');
     setShowUploadModal(false);
     setToastMessage('Educational resource published and shared with students successfully!');
@@ -91,7 +99,12 @@ export const SharedResourcesScreen: React.FC<SharedResourcesScreenProps> = ({ is
   };
 
   const handleDownloadAction = (res: EducationalResource) => {
-    setToastMessage(`Downloading "${res.title}" (${res.urlOrFilename})...`);
+    if (res.fileUrl) {
+      downloadFile(res.fileUrl, res.fileName || res.urlOrFilename);
+      setToastMessage(`Downloading "${res.title}"...`);
+    } else {
+      setToastMessage(`Downloading "${res.title}" (${res.urlOrFilename})...`);
+    }
     setTimeout(() => setToastMessage(null), 3500);
   };
 
@@ -396,23 +409,46 @@ export const SharedResourcesScreen: React.FC<SharedResourcesScreenProps> = ({ is
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  {newType === 'LINK' || newType === 'VIDEO' ? 'Web URL Link' : 'Filename / File Reference'}
-                </label>
-                <input
-                  type="text"
-                  placeholder={
-                    newType === 'LINK' || newType === 'VIDEO'
-                      ? 'https://example.com/reference-lecture'
-                      : 'Quadratic_Formula_Complete_Notes.pdf'
-                  }
-                  value={newUrlOrFilename}
-                  onChange={(e) => setNewUrlOrFilename(e.target.value)}
-                  required
-                  className="w-full text-xs font-mono border border-slate-300 rounded-lg p-2.5 focus:outline-hidden focus:ring-2 focus:ring-teal-600"
-                />
-              </div>
+              {newType === 'PDF' || newType === 'CHEATSHEET' ? (
+                <div className="p-3 bg-teal-50/70 rounded-xl border border-teal-200/90 space-y-2">
+                  <FileUploadInput
+                    label="Upload Real Resource File (PDF or Image, max 10 MB)"
+                    folder="resources"
+                    currentFileName={newUrlOrFilename}
+                    currentFileSize={newSizeOrDuration}
+                    currentFileUrl={newFileUrl}
+                    onFileUploaded={(res) => {
+                      setNewUrlOrFilename(res.fileName);
+                      setNewFileName(res.fileName);
+                      setNewFileUrl(res.downloadUrl);
+                      setNewSizeOrDuration(`${res.fileSizeFormatted} · Document`);
+                      if (!newTitle.trim()) {
+                        setNewTitle(res.fileName.replace(/\.[^/.]+$/, '').replace(/_/g, ' '));
+                      }
+                    }}
+                    accentColor="teal"
+                    required
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Web URL Link
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={
+                      newType === 'VIDEO'
+                        ? 'https://www.youtube.com/watch?v=example'
+                        : 'https://example.com/reference-portal'
+                    }
+                    value={newUrlOrFilename}
+                    onChange={(e) => setNewUrlOrFilename(e.target.value)}
+                    required
+                    className="w-full text-xs font-mono border border-slate-300 rounded-lg p-2.5 focus:outline-hidden focus:ring-2 focus:ring-teal-600"
+                  />
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
