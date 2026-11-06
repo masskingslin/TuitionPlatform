@@ -51,10 +51,24 @@ service cloud.firestore {
     }
 
     // 1. Users collection
+    // Users CANNOT set or change their own role or isSchoolAdmin.
     match /users/{userId} {
       allow get: if isSignedIn() && (request.auth.uid == userId || isTeacherOrAdmin());
-      allow list: if isSignedIn();
-      allow create, update: if isSignedIn() && (request.auth.uid == userId || isTeacherOrAdmin());
+      allow list: if isTeacherOrAdmin();
+      allow create: if isSignedIn() && (
+        isTeacherOrAdmin() || (
+          request.auth.uid == userId &&
+          request.resource.data.role == 'STUDENT' &&
+          (!('isSchoolAdmin' in request.resource.data) || request.resource.data.isSchoolAdmin == false)
+        )
+      );
+      allow update: if isSignedIn() && (
+        isTeacherOrAdmin() || (
+          request.auth.uid == userId &&
+          request.resource.data.role == resource.data.role &&
+          (!('isSchoolAdmin' in request.resource.data) || request.resource.data.isSchoolAdmin == resource.data.isSchoolAdmin)
+        )
+      );
       allow delete: if isTeacherOrAdmin();
     }
 
@@ -64,10 +78,14 @@ service cloud.firestore {
       allow create, update, delete: if isTeacherOrAdmin();
     }
 
-    // 3. Attendance collection
+    // 3. Attendance collection - Writable ONLY by teachers/admins
     match /attendance/{attendanceId} {
       allow get: if isSignedIn() && canAccessStudentData(resource.data.studentId);
-      allow list: if isSignedIn();
+      allow list: if isSignedIn() && (
+        isTeacherOrAdmin() ||
+        (hasUserDoc() && getUserRole() == 'STUDENT' && resource.data.studentId == request.auth.uid) ||
+        (hasUserDoc() && getUserRole() == 'PARENT' && isLinkedParentOf(resource.data.studentId))
+      );
       allow create, update, delete: if isTeacherOrAdmin();
     }
 
@@ -77,27 +95,41 @@ service cloud.firestore {
       allow create, update, delete: if isTeacherOrAdmin();
     }
 
-    // 5. Submissions collection
+    // 5. Submissions collection - Students write ONLY their own
     match /submissions/{submissionId} {
-      allow get: if isSignedIn() && (
-        canAccessStudentData(resource.data.studentId) ||
-        isTeacherOrAdmin()
+      allow get: if isSignedIn() && canAccessStudentData(resource.data.studentId);
+      allow list: if isSignedIn() && (
+        isTeacherOrAdmin() ||
+        (hasUserDoc() && getUserRole() == 'STUDENT' && resource.data.studentId == request.auth.uid) ||
+        (hasUserDoc() && getUserRole() == 'PARENT' && isLinkedParentOf(resource.data.studentId))
       );
-      allow list: if isSignedIn();
-      allow create: if isSignedIn();
+      allow create: if isSignedIn() && (
+        isTeacherOrAdmin() ||
+        (request.resource.data.studentId == request.auth.uid)
+      );
       allow update: if isSignedIn() && (
-        resource.data.studentId == request.auth.uid ||
-        isTeacherOrAdmin()
+        isTeacherOrAdmin() ||
+        (resource.data.studentId == request.auth.uid && request.resource.data.studentId == request.auth.uid)
       );
       allow delete: if isTeacherOrAdmin();
     }
 
-    // 6. Fees collection
+    // 6. Fees collection - Writable ONLY by teachers/admins or Cloud Functions/webhooks
     match /fees/{feeId} {
       allow get: if isSignedIn() && canAccessStudentData(resource.data.studentId);
-      allow list: if isSignedIn();
+      allow list: if isSignedIn() && (
+        isTeacherOrAdmin() ||
+        (hasUserDoc() && getUserRole() == 'STUDENT' && resource.data.studentId == request.auth.uid) ||
+        (hasUserDoc() && getUserRole() == 'PARENT' && isLinkedParentOf(resource.data.studentId))
+      );
       allow create, delete: if isTeacherOrAdmin();
-      allow update: if isSignedIn();
+      allow update: if isTeacherOrAdmin() || (
+        // Students/Parents can only submit manual payment claims (cannot mark paid or alter amount)
+        canAccessStudentData(resource.data.studentId) &&
+        request.resource.data.status == resource.data.status &&
+        request.resource.data.amountPaid == resource.data.amountPaid &&
+        request.resource.data.amountDue == resource.data.amountDue
+      );
     }
 
     // 7. Announcements collection
@@ -106,12 +138,19 @@ service cloud.firestore {
       allow create, update, delete: if isTeacherOrAdmin();
     }
 
-    // 8. Doubts collection
+    // 8. Doubts collection - Students write ONLY their own
     match /doubts/{doubtId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if isTeacherOrAdmin() || (isSignedIn() && resource.data.studentId == request.auth.uid);
+      allow read, list: if isSignedIn();
+      allow create: if isSignedIn() && (
+        isTeacherOrAdmin() ||
+        (request.resource.data.studentId == request.auth.uid)
+      );
+      allow update: if isTeacherOrAdmin() || (
+        isSignedIn() && resource.data.studentId == request.auth.uid && request.resource.data.studentId == request.auth.uid
+      );
+      allow delete: if isTeacherOrAdmin() || (
+        isSignedIn() && resource.data.studentId == request.auth.uid
+      );
     }
 
     // 9. Educational Resources
@@ -120,11 +159,15 @@ service cloud.firestore {
       allow create, update, delete: if isTeacherOrAdmin();
     }
 
-    // 10. Notifications
+    // 10. Notifications - Writable ONLY by teachers/admins
     match /notifications/{notificationId} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn();
-      allow delete: if isSignedIn();
+      allow read, list: if isSignedIn() && (
+        isTeacherOrAdmin() ||
+        resource.data.userId == request.auth.uid ||
+        resource.data.targetRole == 'ALL' ||
+        (hasUserDoc() && resource.data.targetRole == getUserRole())
+      );
+      allow create, update, delete: if isTeacherOrAdmin();
     }
 
     // 11. Classroom Rooms
@@ -142,35 +185,38 @@ service cloud.firestore {
     // 13. Parent links
     match /parent_links/{codeId} {
       allow read: if isSignedIn();
-      allow create, update: if isSignedIn();
+      allow create: if isSignedIn() && (isTeacherOrAdmin() || request.resource.data.studentId == request.auth.uid);
+      allow update: if isSignedIn() && (isTeacherOrAdmin() || resource.data.studentId == request.auth.uid);
       allow delete: if isTeacherOrAdmin();
     }
 
     // 14. School Info
     match /school_info/{schoolId} {
       allow read: if isSignedIn();
-      allow create, update: if isTeacherOrAdmin() || isSignedIn();
+      allow create, update, delete: if isTeacherOrAdmin();
     }
 
     // 15. School Members
     match /school_members/{memberId} {
       allow read: if isSignedIn();
-      allow create, update: if isSignedIn();
-      allow delete: if isTeacherOrAdmin();
+      allow create, update, delete: if isTeacherOrAdmin();
     }
 
     // 16. Test Results
     match /test_results/{testId} {
       allow get: if isSignedIn() && canAccessStudentData(resource.data.studentId);
-      allow list: if isSignedIn();
+      allow list: if isSignedIn() && (
+        isTeacherOrAdmin() ||
+        (hasUserDoc() && getUserRole() == 'STUDENT' && resource.data.studentId == request.auth.uid) ||
+        (hasUserDoc() && getUserRole() == 'PARENT' && isLinkedParentOf(resource.data.studentId))
+      );
       allow create, update, delete: if isTeacherOrAdmin();
     }
 
-    // 17. Notification & Message Logs (Audit trail for SMS, WhatsApp & FCM)
+    // 17. Notification & Message Logs
     match /notification_logs/{logId} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn();
-      allow delete: if isTeacherOrAdmin();
+      allow read, list: if isTeacherOrAdmin();
+      allow create, update, delete: if isTeacherOrAdmin();
     }
   }
 }

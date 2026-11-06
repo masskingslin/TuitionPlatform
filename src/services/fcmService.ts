@@ -19,7 +19,7 @@ export interface FcmPushParams {
 export interface FcmPushResult {
   success: boolean;
   messageId: string;
-  status: 'DELIVERED' | 'SENT' | 'SIMULATED' | 'FAILED';
+  status: 'DELIVERED' | 'SENT' | 'FAILED';
   error?: string;
 }
 
@@ -40,45 +40,34 @@ export async function getFcmMessagingInstance() {
 }
 
 /**
- * Requests browser push permission and retrieves FCM registration token
+ * Requests browser push permission and retrieves FCM registration token.
+ * Returns null if messaging is unavailable or permission denied.
  */
 export async function requestFcmToken(): Promise<string | null> {
   if (typeof window === 'undefined' || !('Notification' in window)) {
-    console.warn('Notifications not supported in this browser window.');
     return null;
   }
 
   try {
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') {
-      console.info('Notification permission not granted:', permission);
       return null;
     }
 
     const messaging = await getFcmMessagingInstance();
     if (!messaging) {
-      // In sandbox/iframe environments without full ServiceWorker support, generate consistent client token
-      const mockToken = `fcm_token_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-      sessionStorage.setItem('tuition_fcm_token', mockToken);
-      return mockToken;
+      return null;
     }
 
-    // Register service worker if not already active
     let registration: ServiceWorkerRegistration | undefined;
     if ('serviceWorker' in navigator) {
-      registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js').catch((err) => {
-        console.warn('Service worker registration note:', err);
-        return undefined;
-      });
+      registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js').catch(() => undefined);
     }
 
     const token = await getToken(messaging, {
       serviceWorkerRegistration: registration,
       vapidKey: (firebaseConfig as any).vapidKey || undefined
-    }).catch((err) => {
-      console.warn('getToken fallback:', err);
-      return `fcm_web_${Date.now()}_client`;
-    });
+    }).catch(() => null);
 
     if (token) {
       sessionStorage.setItem('tuition_fcm_token', token);
@@ -101,7 +90,6 @@ export async function listenToForegroundFcmMessages(
 
   try {
     return onMessage(messaging, (payload) => {
-      console.log('[FCM] Foreground push message received:', payload);
       const title = payload.notification?.title || payload.data?.title || 'Tuition Platform';
       const body = payload.notification?.body || payload.data?.body || 'New alert received.';
       onNotificationReceived({ title, body, data: payload.data });
@@ -113,16 +101,16 @@ export async function listenToForegroundFcmMessages(
 }
 
 /**
- * Dispatches an FCM push notification for homework, announcements, or fees,
- * and saves a persistent audit log in Firestore.
+ * Dispatches an FCM push notification for homework, announcements, or fees
  */
 export async function dispatchFcmPush(params: FcmPushParams): Promise<FcmPushResult> {
-  const logId = `fcm-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const logId = `fcm-${Date.now()}`;
   const nowIso = new Date().toISOString();
   let result: FcmPushResult = {
-    success: true,
-    messageId: `projects/laughing-pod-9v4kj/messages/fcm_${Date.now()}`,
-    status: 'DELIVERED'
+    success: false,
+    messageId: '',
+    status: 'FAILED',
+    error: 'FCM push not dispatched'
   };
 
   try {
@@ -137,13 +125,13 @@ export async function dispatchFcmPush(params: FcmPushParams): Promise<FcmPushRes
       const payload = data.data || data;
       result = {
         success: payload.success ?? true,
-        messageId: payload.messageId || result.messageId,
+        messageId: payload.messageId || `fcm_${Date.now()}`,
         status: payload.status || 'DELIVERED',
         error: payload.error
       };
     }
   } catch (networkErr) {
-    console.warn('Call to /api/sendFcmNotification failed, persisting direct log:', networkErr);
+    console.warn('Call to /api/sendFcmNotification failed:', networkErr);
   }
 
   // Save FCM dispatch log in Firestore notification_logs collection
@@ -157,7 +145,7 @@ export async function dispatchFcmPush(params: FcmPushParams): Promise<FcmPushRes
       title: params.title,
       content: params.body,
       provider: 'FCM',
-      providerMessageId: result.messageId,
+      providerMessageId: result.messageId || 'N/A',
       status: result.status,
       sentAt: nowIso,
       metadata: {

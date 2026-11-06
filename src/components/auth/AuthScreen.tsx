@@ -90,25 +90,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = () => {
       color: 'border-blue-500 bg-blue-50/60 text-blue-700'
     },
     {
-      role: 'TEACHER',
-      title: 'Teacher',
-      subtitle: 'Mark attendance, batches & grading',
-      icon: Briefcase,
-      color: 'border-teal-600 bg-teal-50/60 text-teal-800'
-    },
-    {
       role: 'PARENT',
       title: 'Parent',
       subtitle: 'Track child performance & pay fees',
       icon: Users,
       color: 'border-indigo-600 bg-indigo-50/60 text-indigo-800'
-    },
-    {
-      role: 'ADMIN',
-      title: 'School Admin',
-      subtitle: 'Institution roster & school codes',
-      icon: ShieldCheck,
-      color: 'border-purple-600 bg-purple-50/60 text-purple-800'
     }
   ];
 
@@ -282,58 +268,60 @@ export const AuthScreen: React.FC<AuthScreenProps> = () => {
             </button>
           </form>
 
-          {/* Quick Demo Access Bar */}
-          <div className="mt-8 pt-6 border-t border-slate-200">
-            <div className="flex items-center gap-1.5 mb-3 text-xs font-semibold text-slate-600">
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span>1-Click Test with Demo Profiles (No Typing Needed)</span>
+          {/* Quick Demo Access Bar (Only shown in Development) */}
+          {import.meta.env.DEV && (
+            <div className="mt-8 pt-6 border-t border-slate-200">
+              <div className="flex items-center gap-1.5 mb-3 text-xs font-semibold text-slate-600">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>1-Click Test with Demo Profiles (Dev Mode Only)</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleQuickDemo('STUDENT')}
+                  disabled={isLoading}
+                  className="flex flex-col items-center justify-center p-2 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-800 text-xs font-semibold transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <GraduationCap className="w-4 h-4 mb-1 text-blue-600" />
+                  <span>Student</span>
+                  <span className="text-[10px] text-blue-600/70 font-normal">Aravind</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleQuickDemo('TEACHER')}
+                  disabled={isLoading}
+                  className="flex flex-col items-center justify-center p-2 rounded-xl bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-800 text-xs font-semibold transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <Briefcase className="w-4 h-4 mb-1 text-teal-600" />
+                  <span>Teacher</span>
+                  <span className="text-[10px] text-teal-600/70 font-normal">Mr. Kingslin</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleQuickDemo('PARENT')}
+                  disabled={isLoading}
+                  className="flex flex-col items-center justify-center p-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-800 text-xs font-semibold transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <Users className="w-4 h-4 mb-1 text-indigo-600" />
+                  <span>Parent</span>
+                  <span className="text-[10px] text-indigo-600/70 font-normal">Kumar Raman</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleQuickDemo('ADMIN')}
+                  disabled={isLoading}
+                  className="flex flex-col items-center justify-center p-2 rounded-xl bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-800 text-xs font-semibold transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <ShieldCheck className="w-4 h-4 mb-1 text-purple-600" />
+                  <span>Admin</span>
+                  <span className="text-[10px] text-purple-600/70 font-normal">Principal</span>
+                </button>
+              </div>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <button
-                type="button"
-                onClick={() => handleQuickDemo('STUDENT')}
-                disabled={isLoading}
-                className="flex flex-col items-center justify-center p-2 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-800 text-xs font-semibold transition-all cursor-pointer disabled:opacity-50"
-              >
-                <GraduationCap className="w-4 h-4 mb-1 text-blue-600" />
-                <span>Student</span>
-                <span className="text-[10px] text-blue-600/70 font-normal">Aravind</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickDemo('TEACHER')}
-                disabled={isLoading}
-                className="flex flex-col items-center justify-center p-2 rounded-xl bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-800 text-xs font-semibold transition-all cursor-pointer disabled:opacity-50"
-              >
-                <Briefcase className="w-4 h-4 mb-1 text-teal-600" />
-                <span>Teacher</span>
-                <span className="text-[10px] text-teal-600/70 font-normal">Mr. Kingslin</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickDemo('PARENT')}
-                disabled={isLoading}
-                className="flex flex-col items-center justify-center p-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-800 text-xs font-semibold transition-all cursor-pointer disabled:opacity-50"
-              >
-                <Users className="w-4 h-4 mb-1 text-indigo-600" />
-                <span>Parent</span>
-                <span className="text-[10px] text-indigo-600/70 font-normal">Kumar Raman</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickDemo('ADMIN')}
-                disabled={isLoading}
-                className="flex flex-col items-center justify-center p-2 rounded-xl bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-800 text-xs font-semibold transition-all cursor-pointer disabled:opacity-50"
-              >
-                <ShieldCheck className="w-4 h-4 mb-1 text-purple-600" />
-                <span>Admin</span>
-                <span className="text-[10px] text-purple-600/70 font-normal">Principal</span>
-              </button>
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

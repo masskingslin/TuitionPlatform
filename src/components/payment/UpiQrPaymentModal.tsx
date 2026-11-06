@@ -181,37 +181,8 @@ export const UpiQrPaymentModal: React.FC<UpiQrPaymentModalProps> = ({
         });
         razorpayInstance.open();
       } else {
-        // Fallback Sandbox simulation if Razorpay CDN script is blocked by browser sandbox
-        console.warn('Running simulated Razorpay verification in developer sandbox...');
-        setRazorpayStatusText('Testing cryptographic signature verification with Cloud Function...');
-
-        const mockPaymentId = `pay_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
-        const verification = await verifySignatureOnServer({
-          invoiceId,
-          orderId: order.orderId,
-          paymentId: mockPaymentId,
-          signature: 'test_verified_sig'
-        });
-
-        if (verification.success) {
-          setVerifiedPaymentId(mockPaymentId);
-          setRazorpayStatusText('Signature verified! Fee marked as PAID.');
-
-          await payFee(
-            invoiceId,
-            `Razorpay Checkout (${mockPaymentId})`,
-            mockPaymentId,
-            order.orderId
-          );
-
-          setTimeout(() => {
-            setIsProcessingRazorpay(false);
-            onPaymentSuccess('Razorpay Checkout', mockPaymentId, mockPaymentId);
-          }, 1200);
-        } else {
-          setRazorpayError('Signature verification failed.');
-          setIsProcessingRazorpay(false);
-        }
+        setIsProcessingRazorpay(false);
+        setRazorpayError('Payment unavailable, try again');
       }
     } catch (err: unknown) {
       console.error('Razorpay checkout error:', err);

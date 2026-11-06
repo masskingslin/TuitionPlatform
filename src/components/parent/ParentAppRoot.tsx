@@ -4,6 +4,8 @@ import { ParentNavScreen, ChildProfile, FeeRecord } from '../../types';
 import { UpiQrPaymentModal } from '../payment/UpiQrPaymentModal';
 import { ChildProgressReportModal } from './ChildProgressReportModal';
 import { GlobalSearchBar, SearchCategory } from '../common/GlobalSearchBar';
+import { KeyboardShortcutsModal } from '../common/KeyboardShortcutsModal';
+import { useGlobalKeyboardShortcuts } from '../../hooks/useGlobalKeyboardShortcuts';
 import {
   LayoutDashboard,
   CheckSquare,
@@ -21,7 +23,8 @@ import {
   Award,
   Calendar,
   GraduationCap,
-  LogOut
+  LogOut,
+  Keyboard
 } from 'lucide-react';
 
 export const ParentAppRoot: React.FC = () => {
@@ -52,6 +55,7 @@ export const ParentAppRoot: React.FC = () => {
   const [payingFee, setPayingFee] = useState<FeeRecord | null>(null);
   const [confirmUnlink, setConfirmUnlink] = useState<ChildProfile | null>(null);
   const [showProgressReport, setShowProgressReport] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
 
   // Active child profile
   const activeChild = linkedChildren.find((c) => c.id === activeChildId) || linkedChildren[0] || {
@@ -134,6 +138,17 @@ export const ParentAppRoot: React.FC = () => {
     { key: 'ACCOUNT' as ParentNavScreen, label: 'Account', icon: User }
   ];
 
+  // Enable global keyboard shortcuts for power users (Ctrl+K, Alt+1..6, ?)
+  useGlobalKeyboardShortcuts({
+    onOpenHelp: () => setShowShortcuts((prev) => !prev),
+    onSelectTab: (index) => {
+      if (index >= 0 && index < navItems.length) {
+        setSelectedScreen(navItems[index].key);
+      }
+    },
+    maxTabs: navItems.length
+  });
+
   const handleSearchSelect = (category: SearchCategory) => {
     if (category === 'STUDENT') setSelectedScreen('OVERVIEW');
     else if (category === 'BATCH') setSelectedScreen('OVERVIEW');
@@ -154,10 +169,23 @@ export const ParentAppRoot: React.FC = () => {
 
           {/* Global Search Bar */}
           <div className="flex-1 max-w-xs sm:max-w-sm mx-1 sm:mx-2">
-            <GlobalSearchBar onSelectResult={handleSearchSelect} />
+            <GlobalSearchBar
+              onSelectResult={handleSearchSelect}
+              onOpenShortcuts={() => setShowShortcuts(true)}
+            />
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {/* Keyboard Shortcuts Cheat Sheet Button */}
+            <button
+              onClick={() => setShowShortcuts(true)}
+              className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 bg-white/15 hover:bg-white/25 active:bg-white/30 text-white text-xs font-semibold rounded-lg border border-white/20 transition-colors cursor-pointer"
+              title="Keyboard Shortcuts (?)"
+              aria-label="View keyboard shortcuts"
+            >
+              <Keyboard className="w-3.5 h-3.5" />
+              <span className="hidden xl:inline">Shortcuts</span>
+            </button>
             {/* Child Selector Dropdown */}
             {linkedChildren.length > 0 && (
               <div className="relative">
@@ -972,6 +1000,12 @@ export const ParentAppRoot: React.FC = () => {
           onClose={() => setShowProgressReport(false)}
         />
       )}
+
+      {/* Keyboard Shortcuts Cheat Sheet Modal */}
+      <KeyboardShortcutsModal
+        isOpen={showShortcuts}
+        onClose={() => setShowShortcuts(false)}
+      />
 
       {/* Bottom NavigationBar */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40 shadow-lg">

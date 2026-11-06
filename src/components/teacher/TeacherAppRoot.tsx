@@ -2,6 +2,8 @@ import React, { useState, Suspense, lazy } from 'react';
 import { TeacherNavScreen } from '../../types';
 import { ProfileModal } from '../common/ProfileModal';
 import { GlobalSearchBar, SearchCategory } from '../common/GlobalSearchBar';
+import { KeyboardShortcutsModal } from '../common/KeyboardShortcutsModal';
+import { useGlobalKeyboardShortcuts } from '../../hooks/useGlobalKeyboardShortcuts';
 import {
   Loader2,
   BookOpen,
@@ -16,7 +18,8 @@ import {
   Building2,
   TrendingUp,
   GraduationCap,
-  LogOut
+  LogOut,
+  Keyboard
 } from 'lucide-react';
 import { useTuition } from '../../context/TuitionContext';
 
@@ -61,6 +64,7 @@ const ComponentLoader: React.FC = () => (
 export const TeacherAppRoot: React.FC = () => {
   const [selectedScreen, setSelectedScreen] = useState<TeacherNavScreen>('BATCHES');
   const [showProfile, setShowProfile] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const { setRole, currentTeacher, doubts, schoolInfo, logout, userProfile } = useTuition();
 
   const isAdmin = userProfile?.role === 'ADMIN';
@@ -105,6 +109,17 @@ export const TeacherAppRoot: React.FC = () => {
     { key: 'FEE_TRACKER' as TeacherNavScreen, label: 'Fees', icon: Receipt }
   ];
 
+  // Enable global keyboard shortcuts for power users (Ctrl+K, Alt+1..9, ?)
+  useGlobalKeyboardShortcuts({
+    onOpenHelp: () => setShowShortcuts((prev) => !prev),
+    onSelectTab: (index) => {
+      if (index >= 0 && index < navItems.length) {
+        setSelectedScreen(navItems[index].key);
+      }
+    },
+    maxTabs: navItems.length
+  });
+
   const handleSearchSelect = (category: SearchCategory) => {
     if (category === 'STUDENT') setSelectedScreen('ATTENDANCE');
     else if (category === 'BATCH') setSelectedScreen('BATCHES');
@@ -125,10 +140,24 @@ export const TeacherAppRoot: React.FC = () => {
 
           {/* Global Search Bar */}
           <div className="flex-1 max-w-xs sm:max-w-sm mx-1 sm:mx-2">
-            <GlobalSearchBar onSelectResult={handleSearchSelect} />
+            <GlobalSearchBar
+              onSelectResult={handleSearchSelect}
+              onOpenShortcuts={() => setShowShortcuts(true)}
+            />
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* Keyboard Shortcuts Cheat Sheet Button */}
+            <button
+              onClick={() => setShowShortcuts(true)}
+              className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 bg-white/15 hover:bg-white/25 active:bg-white/30 text-white text-xs font-semibold rounded-lg border border-white/20 transition-colors cursor-pointer"
+              title="Keyboard Shortcuts (?)"
+              aria-label="View keyboard shortcuts"
+            >
+              <Keyboard className="w-3.5 h-3.5" />
+              <span className="hidden xl:inline">Shortcuts</span>
+            </button>
+
             <button
               onClick={() => setShowProfile(true)}
               className="hidden lg:flex items-center gap-1.5 text-xs text-teal-100 hover:text-white hover:bg-white/10 px-2.5 py-1.5 rounded-lg border border-transparent hover:border-white/20 transition-all font-medium cursor-pointer"
@@ -194,6 +223,12 @@ export const TeacherAppRoot: React.FC = () => {
           onClose={() => setShowProfile(false)}
         />
       )}
+
+      {/* Keyboard Shortcuts Cheat Sheet Modal */}
+      <KeyboardShortcutsModal
+        isOpen={showShortcuts}
+        onClose={() => setShowShortcuts(false)}
+      />
 
       {/* Bottom NavigationBar */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40 shadow-lg">

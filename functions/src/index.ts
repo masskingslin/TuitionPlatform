@@ -8,18 +8,28 @@ if (!admin.apps.length) {
 
 const db = admin.firestore();
 
+const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID;
+const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
+const RAZORPAY_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET;
+
 /**
  * 1. createParentLinkCode
  * Server-side code generation with 24-hour expiration and single-use enforcement.
  */
 export const createParentLinkCode = onCall(async (request) => {
-  const { studentId = 's1', studentName = 'Aravind Kumar' } = request.data || {};
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'User must be authenticated to generate a link code.');
+  }
 
-  // Generate cryptographically unpredictable 5-character suffix
+  const { studentId, studentName = 'Student' } = request.data || {};
+  const targetStudentId = studentId || request.auth.uid;
+
+  // Generate cryptographically secure random 6-character suffix
   const characters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const randomBytes = crypto.randomBytes(6);
   let randomSuffix = '';
-  for (let i = 0; i < 5; i++) {
-    randomSuffix += characters.charAt(Math.floor(Math.random() * characters.length));
+  for (let i = 0; i < 6; i++) {
+    randomSuffix += characters.charAt(randomBytes[i] % characters.length);
   }
   const code = `P-${randomSuffix}`;
 
@@ -28,7 +38,7 @@ export const createParentLinkCode = onCall(async (request) => {
 
   const codeRecord = {
     code,
-    studentId,
+    studentId: targetStudentId,
     studentName,
     createdAt: new Date(nowMs).toISOString(),
     createdAtMs: nowMs,
@@ -39,7 +49,6 @@ export const createParentLinkCode = onCall(async (request) => {
     usedAt: null
   };
 
-  // Save to Firestore parent_links collection
   await db.collection('parent_links').doc(code).set(codeRecord);
 
   return {
@@ -53,10 +62,15 @@ export const createParentLinkCode = onCall(async (request) => {
  * Validates existence, 24-hour expiration, and single-use status before linking child.
  */
 export const linkChildWithCode = onCall(async (request) => {
-  const { code, parentId = 'p1' } = request.data || {};
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'User must be authenticated to link a child.');
+  }
+
+  const parentId = request.auth.uid;
+  const { code } = request.data || {};
 
   if (!code || typeof code !== 'string') {
-    throw new HttpsError('invalid-argument', 'A parent link code must be provided.');
+    throw new HttpsError('invalid-argument', 'A valid parent link code must be provided.');
   }
 
   const cleanCode = code.trim().toUpperCase();
@@ -65,22 +79,7 @@ export const linkChildWithCode = onCall(async (request) => {
   return await db.runTransaction(async (transaction) => {
     const codeDoc = await transaction.get(codeRef);
 
-    // Fallback support for demo codes if running in local sandbox
     if (!codeDoc.exists) {
-      if (cleanCode === 'P-94821' || cleanCode === 'P-DIVYA' || cleanCode === 'P-72819') {
-        const fallbackChild = {
-          id: cleanCode === 'P-DIVYA' ? 's2' : 's1',
-          fullName: cleanCode === 'P-DIVYA' ? 'Divya Sharma' : 'Aravind Kumar',
-          grade: 'Grade 10',
-          section: 'State Board Batch A',
-          schoolName: 'Apex Academy of Excellence'
-        };
-        return {
-          success: true,
-          message: `Successfully linked ${fallbackChild.fullName}!`,
-          child: fallbackChild
-        };
-      }
       return {
         success: false,
         message: 'Invalid parent link code. Ask your student to generate a fresh code.'
@@ -89,7 +88,7 @@ export const linkChildWithCode = onCall(async (request) => {
 
     const data = codeDoc.data();
     if (!data) {
-      return { success: false, message: 'Invalid parent link code.' };
+      return { success: false, message: 'Invalid parent link code data.' };
     }
 
     // Single-use validation
@@ -109,7 +108,7 @@ export const linkChildWithCode = onCall(async (request) => {
       };
     }
 
-    // Atomically consume code
+    // Mark single-use
     transaction.update(codeRef, {
       used: true,
       usedBy: parentId,
@@ -117,24 +116,22 @@ export const linkChildWithCode = onCall(async (request) => {
     });
 
     const childProfile = {
-      id: data.studentId || 's1',
-      fullName: data.studentName || 'Aravind Kumar',
+      id: data.studentId,
+      fullName: data.studentName || 'Student',
       grade: 'Grade 10',
       section: 'State Board Batch A',
       schoolName: 'Apex Academy of Excellence'
     };
 
     // Update parent's user doc with linked child
-    if (parentId) {
-      const parentUserRef = db.collection('users').doc(parentId);
-      const parentDoc = await transaction.get(parentUserRef);
-      if (parentDoc.exists) {
-        const existingChildren: string[] = parentDoc.data()?.linkedChildIds || [];
-        if (!existingChildren.includes(childProfile.id)) {
-          transaction.update(parentUserRef, {
-            linkedChildIds: [...existingChildren, childProfile.id]
-          });
-        }
+    const parentUserRef = db.collection('users').doc(parentId);
+    const parentDoc = await transaction.get(parentUserRef);
+    if (parentDoc.exists) {
+      const existingChildren: string[] = parentDoc.data()?.linkedChildIds || [];
+      if (!existingChildren.includes(childProfile.id)) {
+        transaction.update(parentUserRef, {
+          linkedChildIds: [...existingChildren, childProfile.id]
+        });
       }
     }
 
@@ -148,16 +145,27 @@ export const linkChildWithCode = onCall(async (request) => {
 
 /**
  * 3. regenerateSchoolCodes
- * Server-side rotation of school join codes for students and teachers.
+ * Server-side rotation of school join codes for students and teachers. Restricted to ADMIN/TEACHER.
  */
 export const regenerateSchoolCodes = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'User must be authenticated.');
+  }
+
+  const callerDoc = await db.collection('users').doc(request.auth.uid).get();
+  const callerRole = callerDoc.data()?.role;
+  if (callerRole !== 'ADMIN' && callerRole !== 'TEACHER') {
+    throw new HttpsError('permission-denied', 'Only teachers and admins can regenerate school codes.');
+  }
+
   const { which = 'both', schoolId = 'sch-1' } = request.data || {};
 
   const chars = '0123456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   const generateHex = () => {
     let result = '';
+    const bytes = crypto.randomBytes(7);
     for (let i = 0; i < 7; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
+      result += chars.charAt(bytes[i] % chars.length);
     }
     return result;
   };
@@ -166,8 +174,8 @@ export const regenerateSchoolCodes = onCall(async (request) => {
   const schoolDoc = await schoolRef.get();
   const currentData = schoolDoc.exists ? schoolDoc.data() : null;
 
-  const newStudentCode = which === 'teacher' ? (currentData?.studentCode || 'S-8F29A1B') : `S-${generateHex()}`;
-  const newTeacherCode = which === 'student' ? (currentData?.teacherCode || 'T-3E49K2X') : `T-${generateHex()}`;
+  const newStudentCode = which === 'teacher' ? (currentData?.studentCode || `S-${generateHex()}`) : `S-${generateHex()}`;
+  const newTeacherCode = which === 'student' ? (currentData?.teacherCode || `T-${generateHex()}`) : `T-${generateHex()}`;
 
   await schoolRef.set(
     {
@@ -185,16 +193,20 @@ export const regenerateSchoolCodes = onCall(async (request) => {
   };
 });
 
-const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || 'rzp_test_ApexTuition2026';
-const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'TuitionPlatformSecret2026';
-const RAZORPAY_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET || RAZORPAY_KEY_SECRET;
-
 /**
  * 4. createRazorpayOrder
  * Creates a Razorpay order server-side for tuition fees
  */
 export const createRazorpayOrder = onCall(async (request) => {
-  const { invoiceId, amount, studentName = 'Student', studentId = 's1', currency = 'INR' } = request.data || {};
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'User must be authenticated to create a payment order.');
+  }
+
+  if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
+    throw new HttpsError('failed-precondition', 'Razorpay API credentials not configured in environment.');
+  }
+
+  const { invoiceId, amount, studentName = 'Student', studentId, currency = 'INR' } = request.data || {};
 
   if (!invoiceId || !amount) {
     throw new HttpsError('invalid-argument', 'invoiceId and amount are required.');
@@ -210,12 +222,11 @@ export const createRazorpayOrder = onCall(async (request) => {
     amountInPaise,
     currency,
     studentName,
-    studentId,
+    studentId: studentId || request.auth.uid,
     status: 'created',
     createdAt: new Date().toISOString()
   };
 
-  // Store order record in Firestore
   await db.collection('razorpay_orders').doc(orderId).set(orderRecord);
 
   return {
@@ -230,45 +241,74 @@ export const createRazorpayOrder = onCall(async (request) => {
 
 /**
  * 5. verifyRazorpayPayment
- * Verifies Razorpay HMAC-SHA256 signature and marks fee as PAID with paymentId.
+ * Verifies Razorpay HMAC-SHA256 signature and checks authorization before marking fee.
  */
 export const verifyRazorpayPayment = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'User must be authenticated to verify payments.');
+  }
+
+  if (!RAZORPAY_KEY_SECRET) {
+    throw new HttpsError('failed-precondition', 'Razorpay KEY_SECRET is not configured in environment.');
+  }
+
+  const callerUid = request.auth.uid;
   const { invoiceId, orderId, paymentId, signature } = request.data || {};
 
   if (!invoiceId || !orderId || !paymentId || !signature) {
     throw new HttpsError('invalid-argument', 'Missing parameters for signature verification.');
   }
 
-  // Cryptographic signature check: HMAC_SHA256(order_id + "|" + payment_id, secret)
-  const generatedSignature = crypto
+  // Strict HMAC SHA256 Signature Check
+  const expectedSignature = crypto
     .createHmac('sha256', RAZORPAY_KEY_SECRET)
     .update(`${orderId}|${paymentId}`)
     .digest('hex');
 
-  // Verify signature (or accept valid signature)
-  const isMatch = generatedSignature === signature || signature === 'test_verified_sig';
-  if (!isMatch) {
-    throw new HttpsError('permission-denied', 'Razorpay payment signature mismatch. Fee not marked as paid.');
+  if (expectedSignature !== signature) {
+    throw new HttpsError('permission-denied', 'Razorpay payment signature mismatch. Verification failed.');
+  }
+
+  const feeRef = db.collection('fees').doc(invoiceId);
+  const feeDoc = await feeRef.get();
+  if (!feeDoc.exists) {
+    throw new HttpsError('not-found', `Fee invoice #${invoiceId} not found.`);
+  }
+
+  const feeData = feeDoc.data()!;
+  const targetStudentId = feeData.studentId;
+
+  // Authorization check: Caller must be the student or a linked parent
+  const callerDoc = await db.collection('users').doc(callerUid).get();
+  const callerData = callerDoc.data() || {};
+  const callerRole = callerData.role;
+  const isStudent = callerUid === targetStudentId || callerData.studentId === targetStudentId;
+  const isLinkedParent =
+    callerRole === 'PARENT' &&
+    Array.isArray(callerData.linkedChildIds) &&
+    callerData.linkedChildIds.includes(targetStudentId);
+  const isStaff = callerRole === 'TEACHER' || callerRole === 'ADMIN';
+
+  if (!isStudent && !isLinkedParent && !isStaff) {
+    throw new HttpsError('permission-denied', 'You are not authorized for this fee record.');
+  }
+
+  const amountDue = feeData.amountDue;
+  if (amountDue === undefined || amountDue === null) {
+    throw new HttpsError('failed-precondition', 'Fee invoice record is missing amountDue.');
   }
 
   const nowIso = new Date().toISOString();
-  const feeRef = db.collection('fees').doc(invoiceId);
-  const feeDoc = await feeRef.get();
 
-  const amount = feeDoc.exists ? (feeDoc.data()?.amountDue || 1500) : 1500;
-
-  await feeRef.set(
-    {
-      status: 'PAID',
-      amountPaid: amount,
-      paymentId,
-      razorpayOrderId: orderId,
-      paymentMethod: `Razorpay (${paymentId})`,
-      paidAt: nowIso,
-      approvalStatus: 'APPROVED'
-    },
-    { merge: true }
-  );
+  await feeRef.update({
+    status: 'PAID',
+    amountPaid: amountDue,
+    paymentId,
+    razorpayOrderId: orderId,
+    paymentMethod: `Razorpay (${paymentId})`,
+    paidAt: nowIso,
+    approvalStatus: 'APPROVED'
+  });
 
   return {
     success: true,
@@ -281,7 +321,7 @@ export const verifyRazorpayPayment = onCall(async (request) => {
 /**
  * 6. razorpayWebhook
  * Webhook that receives payment.captured or order.paid, verifies signature,
- * and marks fee record as PAID storing payment ID.
+ * and acts as final authority for marking fee record as PAID in Firestore.
  */
 export const razorpayWebhook = onRequest(async (req, res) => {
   if (req.method !== 'POST') {
@@ -289,20 +329,28 @@ export const razorpayWebhook = onRequest(async (req, res) => {
     return;
   }
 
+  if (!RAZORPAY_WEBHOOK_SECRET) {
+    res.status(500).json({ error: 'Razorpay webhook secret not configured' });
+    return;
+  }
+
   const signature = req.headers['x-razorpay-signature'] as string;
   const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
 
-  if (signature) {
-    const expectedSignature = crypto
-      .createHmac('sha256', RAZORPAY_WEBHOOK_SECRET)
-      .update(rawBody)
-      .digest('hex');
+  if (!signature) {
+    res.status(400).json({ error: 'Missing x-razorpay-signature header' });
+    return;
+  }
 
-    if (expectedSignature !== signature) {
-      console.warn('Razorpay webhook signature verification failed.');
-      res.status(400).json({ error: 'Signature verification failed' });
-      return;
-    }
+  const expectedSignature = crypto
+    .createHmac('sha256', RAZORPAY_WEBHOOK_SECRET)
+    .update(rawBody)
+    .digest('hex');
+
+  if (expectedSignature !== signature) {
+    console.warn('Razorpay webhook signature verification failed.');
+    res.status(400).json({ error: 'Signature verification failed' });
+    return;
   }
 
   const event = req.body?.event;
@@ -312,27 +360,27 @@ export const razorpayWebhook = onRequest(async (req, res) => {
     const payment = payload?.payment?.entity;
     const order = payload?.order?.entity;
 
-    const paymentId = payment?.id || `pay_${Date.now()}`;
+    const paymentId = payment?.id;
     const orderId = payment?.order_id || order?.id;
     const invoiceId = payment?.notes?.invoiceId || order?.notes?.invoiceId;
-    const amountInPaise = payment?.amount || order?.amount || 150000;
-    const amount = amountInPaise / 100;
 
-    if (invoiceId) {
-      const nowIso = new Date().toISOString();
-      await db.collection('fees').doc(invoiceId).set(
-        {
+    if (invoiceId && paymentId) {
+      const feeRef = db.collection('fees').doc(invoiceId);
+      const feeDoc = await feeRef.get();
+      if (feeDoc.exists) {
+        const amountDue = feeDoc.data()?.amountDue || 0;
+        const nowIso = new Date().toISOString();
+        await feeRef.update({
           status: 'PAID',
-          amountPaid: amount,
+          amountPaid: amountDue,
           paymentId,
-          razorpayOrderId: orderId,
+          razorpayOrderId: orderId || null,
           paymentMethod: `Razorpay (${payment?.method || 'Online'} · ${paymentId})`,
           paidAt: nowIso,
           approvalStatus: 'APPROVED'
-        },
-        { merge: true }
-      );
-      console.log(`Razorpay webhook marked fee ${invoiceId} as PAID with paymentId ${paymentId}`);
+        });
+        console.log(`Razorpay webhook finalized fee #${invoiceId} as PAID with paymentId ${paymentId}`);
+      }
     }
   }
 
@@ -341,14 +389,18 @@ export const razorpayWebhook = onRequest(async (req, res) => {
 
 /**
  * 7. sendParentMessage
- * Cloud Function to dispatch real SMS (MSG91) or WhatsApp (Meta Cloud API) messages to guardianPhone
- * and log every send in Firestore notification_logs collection.
+ * Cloud Function to dispatch real SMS (MSG91) or WhatsApp (Meta Cloud API) messages to guardianPhone.
+ * If MSG91/WhatsApp keys are missing, returns status FAILED and error "SMS not configured".
  */
 export const sendParentMessage = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'User must be authenticated.');
+  }
+
   const {
     recipientPhone,
     recipientName = 'Guardian',
-    studentId = 's1',
+    studentId,
     studentName = 'Student',
     messageType = 'ATTENDANCE_ALERT',
     channel = 'SMS',
@@ -363,14 +415,36 @@ export const sendParentMessage = onCall(async (request) => {
 
   const cleanPhone = String(recipientPhone).replace(/[^\d+]/g, '');
   const nowIso = new Date().toISOString();
-  let provider = 'MSG91';
-  let messageId = `msg_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
-  let status = 'DELIVERED';
-  let providerError: string | undefined;
 
   // 1. WhatsApp Cloud API
-  if (channel === 'WHATSAPP' && process.env.WHATSAPP_API_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID) {
-    provider = 'WHATSAPP_CLOUD';
+  if (channel === 'WHATSAPP') {
+    if (!process.env.WHATSAPP_API_TOKEN || !process.env.WHATSAPP_PHONE_NUMBER_ID) {
+      const logDoc = {
+        id: `log_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+        channel: 'WHATSAPP',
+        messageType,
+        recipientPhone: cleanPhone,
+        recipientName,
+        studentId: studentId || null,
+        studentName,
+        title: title || 'Parent Notice',
+        content,
+        provider: 'WHATSAPP_CLOUD',
+        providerMessageId: null,
+        status: 'FAILED',
+        error: 'SMS not configured',
+        sentAt: nowIso,
+        metadata
+      };
+      await db.collection('notification_logs').doc(logDoc.id).set(logDoc);
+      return {
+        success: false,
+        status: 'FAILED',
+        error: 'SMS not configured',
+        recipientPhone: cleanPhone
+      };
+    }
+
     try {
       const waResponse = await fetch(
         `https://graph.facebook.com/v18.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
@@ -391,96 +465,122 @@ export const sendParentMessage = onCall(async (request) => {
       );
       const waData = (await waResponse.json()) as any;
       if (waResponse.ok && waData?.messages?.[0]?.id) {
-        messageId = waData.messages[0].id;
-        status = 'DELIVERED';
-      } else {
-        providerError = waData?.error?.message;
-        status = 'SENT';
+        const messageId = waData.messages[0].id;
+        const logDoc = {
+          id: `log_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+          channel: 'WHATSAPP',
+          messageType,
+          recipientPhone: cleanPhone,
+          recipientName,
+          studentId: studentId || null,
+          studentName,
+          title: title || 'WhatsApp Notice',
+          content,
+          provider: 'WHATSAPP_CLOUD',
+          providerMessageId: messageId,
+          status: 'DELIVERED',
+          sentAt: nowIso,
+          metadata
+        };
+        await db.collection('notification_logs').doc(logDoc.id).set(logDoc);
+        return { success: true, messageId, channel: 'WHATSAPP', status: 'DELIVERED' };
       }
     } catch (err: unknown) {
-      providerError = err instanceof Error ? err.message : String(err);
-      status = 'SENT';
+      console.error('WhatsApp dispatch error:', err);
     }
   }
-  // 2. MSG91 SMS API
-  else if (process.env.MSG91_AUTH_KEY) {
-    provider = 'MSG91';
-    try {
-      const msg91Response = await fetch('https://control.msg91.com/api/v5/flow/', {
-        method: 'POST',
-        headers: {
-          authkey: process.env.MSG91_AUTH_KEY,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          template_id: process.env.MSG91_FLOW_ID || 'tuition_parent_alert_flow',
-          short_url: '1',
-          recipients: [
-            {
-              mobiles: cleanPhone.replace(/[^\d]/g, '').slice(-10),
-              name: recipientName,
-              student_name: studentName,
-              message: content
-            }
-          ]
-        })
-      });
-      const msg91Data = (await msg91Response.json()) as any;
-      if (msg91Response.ok && msg91Data?.type === 'success') {
-        messageId = msg91Data.message || `msg91_${Date.now()}`;
-        status = 'DELIVERED';
-      } else {
-        providerError = msg91Data?.message;
-        status = 'SENT';
-      }
-    } catch (err: unknown) {
-      providerError = err instanceof Error ? err.message : String(err);
-      status = 'SENT';
-    }
-  } else {
-    provider = channel === 'WHATSAPP' ? 'WHATSAPP_CLOUD' : 'MSG91';
-    messageId = `${provider.toLowerCase()}_msg_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
-    status = 'DELIVERED';
+
+  // 2. MSG91 SMS
+  if (!process.env.MSG91_AUTH_KEY) {
+    const logDoc = {
+      id: `log_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+      channel: 'SMS',
+      messageType,
+      recipientPhone: cleanPhone,
+      recipientName,
+      studentId: studentId || null,
+      studentName,
+      title: title || 'SMS Alert',
+      content,
+      provider: 'MSG91',
+      providerMessageId: null,
+      status: 'FAILED',
+      error: 'SMS not configured',
+      sentAt: nowIso,
+      metadata
+    };
+    await db.collection('notification_logs').doc(logDoc.id).set(logDoc);
+    return {
+      success: false,
+      status: 'FAILED',
+      error: 'SMS not configured',
+      recipientPhone: cleanPhone
+    };
   }
 
-  // Log send in Firestore notification_logs collection
-  const logDoc = {
-    id: `log_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
-    channel,
-    messageType,
-    recipientPhone: cleanPhone,
-    recipientName,
-    studentId,
-    studentName,
-    title: title || (messageType === 'ATTENDANCE_ALERT' ? 'Attendance Alert' : 'Fee Reminder'),
-    content,
-    provider,
-    providerMessageId: messageId,
-    status,
-    sentAt: nowIso,
-    metadata
-  };
-
-  await db.collection('notification_logs').doc(logDoc.id).set(logDoc);
+  try {
+    const msg91Response = await fetch('https://control.msg91.com/api/v5/flow/', {
+      method: 'POST',
+      headers: {
+        authkey: process.env.MSG91_AUTH_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        template_id: process.env.MSG91_FLOW_ID || 'tuition_parent_alert_flow',
+        short_url: '1',
+        recipients: [
+          {
+            mobiles: cleanPhone.replace(/[^\d]/g, '').slice(-10),
+            name: recipientName,
+            student_name: studentName,
+            message: content
+          }
+        ]
+      })
+    });
+    const msg91Data = (await msg91Response.json()) as any;
+    if (msg91Response.ok && msg91Data?.type === 'success') {
+      const messageId = msg91Data.message || `msg91_${Date.now()}`;
+      const logDoc = {
+        id: `log_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+        channel: 'SMS',
+        messageType,
+        recipientPhone: cleanPhone,
+        recipientName,
+        studentId: studentId || null,
+        studentName,
+        title: title || 'SMS Alert',
+        content,
+        provider: 'MSG91',
+        providerMessageId: messageId,
+        status: 'DELIVERED',
+        sentAt: nowIso,
+        metadata
+      };
+      await db.collection('notification_logs').doc(logDoc.id).set(logDoc);
+      return { success: true, messageId, channel: 'SMS', status: 'DELIVERED' };
+    }
+  } catch (err: unknown) {
+    console.error('MSG91 dispatch error:', err);
+  }
 
   return {
-    success: true,
-    messageId,
-    channel,
-    provider,
-    status,
-    recipientPhone: cleanPhone,
-    sentAt: nowIso,
-    error: providerError
+    success: false,
+    status: 'FAILED',
+    error: 'SMS dispatch failed',
+    recipientPhone: cleanPhone
   };
 });
 
 /**
  * 8. sendFcmNotification
  * Cloud Function to broadcast Firebase Cloud Messaging push for homework, announcements and fees.
- * Logs each push dispatch in Firestore.
  */
 export const sendFcmNotification = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'User must be authenticated.');
+  }
+
   const {
     title = 'Tuition Alert',
     body = '',
@@ -492,9 +592,8 @@ export const sendFcmNotification = onCall(async (request) => {
     data = {}
   } = request.data || {};
 
-  const fcmMessageId = `projects/laughing-pod-9v4kj/messages/fcm_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+  const fcmMessageId = `fcm_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 
-  // Log send in Firestore notification_logs collection
   const logDoc = {
     id: `log_fcm_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
     channel: 'FCM_PUSH',
@@ -526,4 +625,3 @@ export const sendFcmNotification = onCall(async (request) => {
     status: 'DELIVERED'
   };
 });
-

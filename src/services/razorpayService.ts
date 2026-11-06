@@ -47,7 +47,7 @@ export function loadRazorpayScript(): Promise<boolean> {
     script.async = true;
     script.onload = () => resolve(true);
     script.onerror = () => {
-      console.warn('Failed to load Razorpay checkout script from CDN (may be blocked by browser sandbox/adblock).');
+      console.warn('Failed to load Razorpay checkout script from CDN.');
       resolve(false);
     };
     document.body.appendChild(script);
@@ -72,29 +72,49 @@ export async function createOrderOnServer(params: {
 
     if (response.ok) {
       const data = await response.json();
+      const payload = data.data || data;
+      if (payload.keyId && payload.orderId) {
+        return {
+          success: true,
+          orderId: payload.orderId,
+          amount: payload.amount,
+          currency: payload.currency || 'INR',
+          keyId: payload.keyId,
+          invoiceId: params.invoiceId
+        };
+      }
       return {
-        success: true,
-        orderId: data.orderId || data.data?.orderId,
-        amount: data.amount || data.data?.amount,
-        currency: data.currency || data.data?.currency || 'INR',
-        keyId: data.keyId || data.data?.keyId || 'rzp_test_ApexTuition2026',
-        invoiceId: params.invoiceId
+        success: false,
+        orderId: '',
+        amount: 0,
+        currency: 'INR',
+        keyId: '',
+        invoiceId: params.invoiceId,
+        error: payload.error || 'Razorpay environment keys not configured.'
       };
     }
-  } catch (err) {
-    console.warn('Server createRazorpayOrder error, falling back to simulated order:', err);
+    const errData = await response.json().catch(() => ({}));
+    return {
+      success: false,
+      orderId: '',
+      amount: 0,
+      currency: 'INR',
+      keyId: '',
+      invoiceId: params.invoiceId,
+      error: errData.error || errData.data?.error || 'Payment order creation failed.'
+    };
+  } catch (err: unknown) {
+    console.error('Server createRazorpayOrder error:', err);
+    return {
+      success: false,
+      orderId: '',
+      amount: 0,
+      currency: 'INR',
+      keyId: '',
+      invoiceId: params.invoiceId,
+      error: err instanceof Error ? err.message : 'Unable to connect to payment server.'
+    };
   }
-
-  // Fallback order generation for dev/test resilience
-  const fallbackOrderId = `order_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
-  return {
-    success: true,
-    orderId: fallbackOrderId,
-    amount: Math.round(params.amount * 100),
-    currency: 'INR',
-    keyId: 'rzp_test_ApexTuition2026',
-    invoiceId: params.invoiceId
-  };
 }
 
 /**
@@ -116,35 +136,30 @@ export async function verifySignatureOnServer(params: {
 
     if (response.ok) {
       const data = await response.json();
-      if (data.success || data.data?.success) {
+      const payload = data.data || data;
+      if (payload.success) {
         return {
           success: true,
           paymentId: params.paymentId,
           invoiceId: params.invoiceId,
-          verifiedAt: new Date().toISOString()
+          verifiedAt: payload.verifiedAt || new Date().toISOString()
         };
       }
       return {
         success: false,
-        error: data.error || data.data?.error || 'Signature verification failed'
+        error: payload.error || 'Signature verification failed'
       };
     }
-  } catch (err) {
-    console.warn('Server verifyRazorpayPayment error, verifying via fallback:', err);
-  }
-
-  // Offline or client fallback verification
-  if (params.paymentId && params.orderId && params.signature) {
+    const errData = await response.json().catch(() => ({}));
     return {
-      success: true,
-      paymentId: params.paymentId,
-      invoiceId: params.invoiceId,
-      verifiedAt: new Date().toISOString()
+      success: false,
+      error: errData.error || errData.data?.error || 'Payment signature verification failed.'
+    };
+  } catch (err: unknown) {
+    console.error('Server verifyRazorpayPayment error:', err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Network error during signature verification.'
     };
   }
-
-  return {
-    success: false,
-    error: 'Invalid payment signature or verification refused.'
-  };
 }

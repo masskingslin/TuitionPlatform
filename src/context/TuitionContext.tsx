@@ -823,13 +823,7 @@ const initialScheduleSlots: ScheduleSlot[] = [
   }
 ];
 
-const initialParentLinkCode: ParentLinkCode = {
-  code: 'P-94821',
-  studentId: 's1',
-  studentName: 'Aravind Kumar',
-  expiresAt: 'In 24 hours',
-  createdAt: 'Today, 08:30 AM'
-};
+const initialParentLinkCode: ParentLinkCode | null = null;
 
 const initialLinkedParents: LinkedParent[] = [
   {
@@ -961,11 +955,7 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
           batch.set(doc(db, 'school_members', m.id), m);
         });
 
-        // 6. Parent Link Code
-        batch.set(doc(db, 'parent_links', initialParentLinkCode.code), {
-          ...initialParentLinkCode,
-          used: false
-        });
+
 
         await batch.commit();
 
@@ -2069,16 +2059,7 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return newCode;
     } catch (err) {
       console.error('Failed to create parent link code via cloud function:', err);
-      const fallbackCode: ParentLinkCode = {
-        code: `P-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
-        studentId: currentStudent.id,
-        studentName: currentStudent.name,
-        expiresAt: 'In 24 hours',
-        createdAt: 'Just now',
-        used: false
-      };
-      setParentLinkCode(fallbackCode);
-      return fallbackCode;
+      throw new Error('Unable to generate link code. Server connection required.');
     }
   };
 

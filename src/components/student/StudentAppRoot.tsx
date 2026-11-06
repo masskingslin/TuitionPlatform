@@ -3,6 +3,8 @@ import { StudentNavScreen } from '../../types';
 import { NotificationCenterModal } from '../notifications/NotificationCenterModal';
 import { ProfileModal } from '../common/ProfileModal';
 import { GlobalSearchBar, SearchCategory } from '../common/GlobalSearchBar';
+import { KeyboardShortcutsModal } from '../common/KeyboardShortcutsModal';
+import { useGlobalKeyboardShortcuts } from '../../hooks/useGlobalKeyboardShortcuts';
 import {
   Loader2,
   LayoutDashboard,
@@ -15,7 +17,8 @@ import {
   BookOpen,
   Bell,
   Calendar,
-  LogOut
+  LogOut,
+  Keyboard
 } from 'lucide-react';
 import { useTuition } from '../../context/TuitionContext';
 
@@ -52,6 +55,7 @@ export const StudentAppRoot: React.FC = () => {
   const [selectedScreen, setSelectedScreen] = useState<StudentNavScreen>('DASHBOARD');
   const [showProfile, setShowProfile] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const {
     setRole,
     currentStudent,
@@ -91,6 +95,17 @@ export const StudentAppRoot: React.FC = () => {
     { key: 'FEES' as StudentNavScreen, label: 'Fees', icon: CreditCard }
   ];
 
+  // Enable global keyboard shortcuts for power users (Ctrl+K, Alt+1..7, ?)
+  useGlobalKeyboardShortcuts({
+    onOpenHelp: () => setShowShortcuts((prev) => !prev),
+    onSelectTab: (index) => {
+      if (index >= 0 && index < navItems.length) {
+        setSelectedScreen(navItems[index].key);
+      }
+    },
+    maxTabs: navItems.length
+  });
+
   const handleSearchSelect = (category: SearchCategory) => {
     if (category === 'STUDENT') setSelectedScreen('ATTENDANCE');
     else if (category === 'BATCH') setSelectedScreen('RESOURCES');
@@ -111,10 +126,24 @@ export const StudentAppRoot: React.FC = () => {
 
           {/* Global Search Bar */}
           <div className="flex-1 max-w-xs sm:max-w-sm mx-1 sm:mx-2">
-            <GlobalSearchBar onSelectResult={handleSearchSelect} />
+            <GlobalSearchBar
+              onSelectResult={handleSearchSelect}
+              onOpenShortcuts={() => setShowShortcuts(true)}
+            />
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {/* Keyboard Shortcuts Cheat Sheet Button */}
+            <button
+              onClick={() => setShowShortcuts(true)}
+              className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 bg-white/15 hover:bg-white/25 active:bg-white/30 text-white text-xs font-semibold rounded-lg border border-white/20 transition-colors cursor-pointer"
+              title="Keyboard Shortcuts (?)"
+              aria-label="View keyboard shortcuts"
+            >
+              <Keyboard className="w-3.5 h-3.5" />
+              <span className="hidden xl:inline">Shortcuts</span>
+            </button>
+
             {/* Notification Bell with Unread Badge */}
             <button
               onClick={() => setShowNotifications(true)}
@@ -257,6 +286,12 @@ export const StudentAppRoot: React.FC = () => {
           onClose={() => setShowProfile(false)}
         />
       )}
+
+      {/* Keyboard Shortcuts Cheat Sheet Modal */}
+      <KeyboardShortcutsModal
+        isOpen={showShortcuts}
+        onClose={() => setShowShortcuts(false)}
+      />
 
       {/* Bottom NavigationBar */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40 shadow-lg">
