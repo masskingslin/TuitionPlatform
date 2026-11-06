@@ -42,6 +42,11 @@ import {
   callRegenerateSchoolCodes
 } from '../services/cloudFunctions';
 import {
+  apiJoinSchoolAsTeacher,
+  apiJoinSchoolAsStudent,
+  apiLinkChildWithCode
+} from '../services/apiClient';
+import {
   auth,
   db,
   OperationType,
@@ -53,19 +58,22 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
   updatePassword as firebaseUpdatePassword,
+  deleteUser,
   User as FirebaseUser
 } from 'firebase/auth';
 import {
   collection,
   doc,
   getDoc,
+  getDocs,
   setDoc,
   updateDoc,
   deleteDoc,
   onSnapshot,
   writeBatch,
   query,
-  where
+  where,
+  limit
 } from 'firebase/firestore';
 
 interface TuitionContextType {
@@ -75,7 +83,19 @@ interface TuitionContextType {
   userProfile: UserProfile | null;
   authLoading: boolean;
   loginWithEmail: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
-  signupWithEmail: (email: string, pass: string, fullName: string, role: UserRole) => Promise<{ success: boolean; error?: string }>;
+  signupWithEmail: (
+    email: string,
+    pass: string,
+    fullName: string,
+    role: UserRole,
+    joinCode?: string
+  ) => Promise<{ success: boolean; error?: string; requiresRetry?: boolean; pendingRole?: UserRole }>;
+  retryRoleVerification: (
+    role: UserRole,
+    code: string,
+    fullName: string
+  ) => Promise<{ success: boolean; error?: string }>;
+  cancelSignupAndCleanup: () => Promise<void>;
   quickDemoLogin: (role: UserRole) => Promise<void>;
   logout: () => Promise<void>;
   currentStudent: StudentProfile;
@@ -127,7 +147,7 @@ interface TuitionContextType {
     answerSheetUrl?: string
   ) => void;
   gradeSubmission: (submissionId: string, score: number, feedback: string) => void;
-  payFee: (invoiceId: string, paymentMethod?: string, paymentId?: string, razorpayOrderId?: string) => Promise<void> | void;
+  payFee: (invoiceId: string, paymentMethod?: string, paymentId?: string) => Promise<void> | void;
   submitManualPayment: (invoiceId: string, utr: string) => Promise<void> | void;
   approveManualPayment: (invoiceId: string) => Promise<void> | void;
   rejectManualPayment: (invoiceId: string) => Promise<void> | void;
@@ -864,7 +884,9 @@ const initialSchoolInfo: SchoolInfo = {
   isSchoolAdmin: true,
   teacherCount: 4,
   studentCount: 60,
-  parentCount: 42
+  parentCount: 42,
+  upiVpa: 'apex.academy@okaxis',
+  upiPayeeName: 'Apex Academy of Excellence'
 };
 
 const initialSchoolMembers: SchoolMember[] = [
@@ -1122,10 +1144,10 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       )
     );
 
-    // 3. Attendance - Scoped to student/child for students/parents; all for faculty
+    // 3. Attendance - Scoped to student/child with limit(50) for students/parents; limit(100) for faculty
     const attQuery = isTeacherOrAdmin
-      ? collection(db, 'attendance')
-      : query(collection(db, 'attendance'), where('studentId', '==', targetStudentId));
+      ? query(collection(db, 'attendance'), limit(100))
+      : query(collection(db, 'attendance'), where('studentId', '==', targetStudentId), limit(50));
     unsubs.push(
       onSnapshot(
         attQuery,
@@ -1225,10 +1247,10 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       )
     );
 
-    // 10. Notifications
+    // 10. Notifications - Query with limit(30) to cut unnecessary document reads
     unsubs.push(
       onSnapshot(
-        collection(db, 'notifications'),
+        query(collection(db, 'notifications'), limit(30)),
         (snap) => {
           if (!snap.empty) {
             setNotifications(snap.docs.map((d) => ({ id: d.id, ...d.data() } as StudentNotification)));
@@ -1238,18 +1260,14 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       )
     );
 
-    // 11. Rooms
-    unsubs.push(
-      onSnapshot(
-        collection(db, 'rooms'),
-        (snap) => {
-          if (!snap.empty) {
-            setRooms(snap.docs.map((d) => ({ id: d.id, ...d.data() } as ClassroomRoom)));
-          }
-        },
-        (err) => handleFirestoreError(err, OperationType.GET, 'rooms')
-      )
-    );
+    // 11. Rooms - Static infrastructure loaded via getDocs without persistent stream
+    getDocs(collection(db, 'rooms'))
+      .then((snap) => {
+        if (!snap.empty) {
+          setRooms(snap.docs.map((d) => ({ id: d.id, ...d.data() } as ClassroomRoom)));
+        }
+      })
+      .catch((err) => console.warn('Rooms getDocs notice:', err));
 
     // 12. Schedule slots
     unsubs.push(
@@ -1364,11 +1382,11 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       );
     }
 
-    // 17. Notification & Message Logs - Faculty only
+    // 17. Notification & Message Logs - Faculty only, capped to latest 50
     if (isTeacherOrAdmin) {
       unsubs.push(
         onSnapshot(
-          collection(db, 'notification_logs'),
+          query(collection(db, 'notification_logs'), limit(50)),
           (snap) => {
             if (!snap.empty) {
               const logs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as NotificationLog));
@@ -1431,43 +1449,149 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     email: string,
     pass: string,
     fullName: string,
-    signupRole: UserRole
-  ): Promise<{ success: boolean; error?: string }> => {
+    signupRole: UserRole,
+    joinCode?: string
+  ): Promise<{ success: boolean; error?: string; requiresRetry?: boolean; pendingRole?: UserRole }> => {
+    let createdUser: FirebaseUser | null = null;
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, pass);
-      const user = cred.user;
+      createdUser = cred.user;
 
-      const profile: UserProfile = {
-        uid: user.uid,
-        email: user.email || email,
+      // Self-create in Firestore strictly as STUDENT to conform to firestore.rules
+      const initialProfile: UserProfile = {
+        uid: createdUser.uid,
+        email: createdUser.email || email,
         fullName,
-        role: signupRole,
+        role: 'STUDENT',
         schoolId: 'sch-1',
-        studentId: signupRole === 'STUDENT' ? `s-${Date.now()}` : undefined,
-        teacherId: signupRole === 'TEACHER' ? `t-${Date.now()}` : undefined,
-        parentId: signupRole === 'PARENT' ? `p-${Date.now()}` : undefined,
-        linkedChildIds: signupRole === 'PARENT' ? ['s1'] : [],
+        studentId: `s-${createdUser.uid.slice(0, 8)}`,
+        linkedChildIds: [],
         createdAt: new Date().toISOString()
       };
 
-      await setDoc(doc(db, 'users', user.uid), profile);
-      setUserProfile(profile);
-      setRoleState(signupRole);
+      await setDoc(doc(db, 'users', createdUser.uid), initialProfile);
+      setUserProfile(initialProfile);
+      setRoleState('STUDENT');
 
-      // Add to school members roster
-      await setDoc(doc(db, 'school_members', user.uid), {
-        id: user.uid,
-        fullName,
-        email,
-        role: signupRole,
-        isSchoolAdmin: signupRole === 'ADMIN',
-        joinedAt: new Date().toISOString().split('T')[0]
-      });
+      // Finish role setup via server endpoints with verified ID token
+      if (signupRole === 'TEACHER') {
+        if (!joinCode || !joinCode.trim()) {
+          return {
+            success: false,
+            error: 'Teacher join code is required to verify faculty access.',
+            requiresRetry: true,
+            pendingRole: 'TEACHER'
+          };
+        }
+        const verifyRes = await apiJoinSchoolAsTeacher(joinCode.trim(), fullName);
+        if (!verifyRes.success) {
+          return {
+            success: false,
+            error: verifyRes.error || 'Invalid teacher join code.',
+            requiresRetry: true,
+            pendingRole: 'TEACHER'
+          };
+        }
+        setRoleState('TEACHER');
+        setUserProfile((prev) => (prev ? { ...prev, role: 'TEACHER', teacherId: `t-${createdUser!.uid.slice(0, 8)}` } : prev));
+      } else if (signupRole === 'PARENT') {
+        if (!joinCode || !joinCode.trim()) {
+          return {
+            success: false,
+            error: 'Parent link code generated by student is required.',
+            requiresRetry: true,
+            pendingRole: 'PARENT'
+          };
+        }
+        const linkRes = await apiLinkChildWithCode(joinCode.trim(), createdUser.uid);
+        if (!linkRes.success) {
+          return {
+            success: false,
+            error: linkRes.message || linkRes.error || 'Failed to validate parent link code.',
+            requiresRetry: true,
+            pendingRole: 'PARENT'
+          };
+        }
+        setRoleState('PARENT');
+        setUserProfile((prev) => (prev ? {
+          ...prev,
+          role: 'PARENT',
+          parentId: createdUser!.uid,
+          linkedChildIds: linkRes.child ? [linkRes.child.id] : []
+        } : prev));
+        if (linkRes.child) {
+          setLinkedChildren([linkRes.child]);
+          setActiveChildId(linkRes.child.id);
+        }
+      } else if (signupRole === 'STUDENT' && joinCode?.trim()) {
+        await apiJoinSchoolAsStudent(joinCode.trim(), fullName);
+      }
 
       return { success: true };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Sign up failed.';
       return { success: false, error: msg };
+    }
+  };
+
+  const retryRoleVerification = async (
+    role: UserRole,
+    code: string,
+    fullName: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!auth.currentUser) {
+      return { success: false, error: 'User is not authenticated.' };
+    }
+    const uid = auth.currentUser.uid;
+
+    if (role === 'TEACHER') {
+      const res = await apiJoinSchoolAsTeacher(code.trim(), fullName);
+      if (!res.success) {
+        return { success: false, error: res.error || 'Invalid teacher code.' };
+      }
+      setRoleState('TEACHER');
+      setUserProfile((prev) => (prev ? { ...prev, role: 'TEACHER', teacherId: `t-${uid.slice(0, 8)}` } : prev));
+      return { success: true };
+    }
+
+    if (role === 'PARENT') {
+      const res = await apiLinkChildWithCode(code.trim(), uid);
+      if (!res.success) {
+        return { success: false, error: res.message || res.error || 'Invalid parent link code.' };
+      }
+      setRoleState('PARENT');
+      setUserProfile((prev) => (prev ? {
+        ...prev,
+        role: 'PARENT',
+        parentId: uid,
+        linkedChildIds: res.child ? [res.child.id] : []
+      } : prev));
+      if (res.child) {
+        setLinkedChildren([res.child]);
+        setActiveChildId(res.child.id);
+      }
+      return { success: true };
+    }
+
+    return { success: true };
+  };
+
+  const cancelSignupAndCleanup = async (): Promise<void> => {
+    if (!auth.currentUser) return;
+    try {
+      const uid = auth.currentUser.uid;
+      try {
+        await deleteDoc(doc(db, 'users', uid));
+      } catch {
+        // Ignore if already deleted
+      }
+      await deleteUser(auth.currentUser);
+    } catch (err) {
+      console.warn('Failed to cleanup unverified user:', err);
+      await firebaseSignOut(auth);
+    } finally {
+      setUserProfile(null);
+      setCurrentUser(null);
     }
   };
 
@@ -1858,9 +1982,8 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const payFee = async (
     invoiceId: string,
-    paymentMethod = 'Razorpay Checkout',
-    paymentId?: string,
-    razorpayOrderId?: string
+    paymentMethod = 'UPI / Desk Collection',
+    paymentId?: string
   ) => {
     const nowStr = new Date().toLocaleDateString('en-US', {
       month: 'short',
@@ -1883,7 +2006,6 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
               paymentMethod,
               paidAt: nowStr,
               paymentId: paymentId || f.paymentId,
-              razorpayOrderId: razorpayOrderId || f.razorpayOrderId,
               approvalStatus: 'APPROVED',
               manualPaymentClaimed: false
             }
@@ -1899,8 +2021,7 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         paidAt: nowStr,
         approvalStatus: 'APPROVED',
         manualPaymentClaimed: false,
-        ...(paymentId ? { paymentId } : {}),
-        ...(razorpayOrderId ? { razorpayOrderId } : {})
+        ...(paymentId ? { paymentId } : {})
       });
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `fees/${invoiceId}`);
@@ -1917,17 +2038,21 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
 
     const targetFee = feeRecords.find((f) => f.invoiceId === invoiceId);
+    const cleanUtr = utr.trim();
 
     setFeeRecords((prev) =>
       prev.map((f) =>
         f.invoiceId === invoiceId
           ? {
               ...f,
-              manualPaymentClaimed: true,
-              manualPaymentUtr: utr.trim(),
+              status: 'PENDING_APPROVAL',
               approvalStatus: 'PENDING_APPROVAL',
+              utrNumber: cleanUtr,
+              submittedUtrAt: nowStr,
+              manualPaymentClaimed: true,
+              manualPaymentUtr: cleanUtr,
               manualPaymentSubmittedAt: nowStr,
-              paymentMethod: `Manual UPI (Pending Faculty Approval · UTR: ${utr.trim()})`
+              paymentMethod: `UPI Transfer (UTR: ${cleanUtr})`
             }
           : f
       )
@@ -1935,11 +2060,14 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     try {
       await updateDoc(doc(db, 'fees', invoiceId), {
-        manualPaymentClaimed: true,
-        manualPaymentUtr: utr.trim(),
+        status: 'PENDING_APPROVAL',
         approvalStatus: 'PENDING_APPROVAL',
+        utrNumber: cleanUtr,
+        submittedUtrAt: nowStr,
+        manualPaymentClaimed: true,
+        manualPaymentUtr: cleanUtr,
         manualPaymentSubmittedAt: nowStr,
-        paymentMethod: `Manual UPI (Pending Faculty Approval · UTR: ${utr.trim()})`
+        paymentMethod: `UPI Transfer (UTR: ${cleanUtr})`
       });
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `fees/${invoiceId}`);
@@ -1947,8 +2075,8 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     addNotification({
       type: 'GENERAL',
-      title: 'Manual UPI Payment Submitted for Review',
-      message: `UTR #${utr.trim()} submitted for Invoice #${invoiceId}. Faculty review is pending.`,
+      title: 'UPI Payment Claim Submitted (Pending Approval)',
+      message: `UTR #${cleanUtr} submitted for Invoice #${invoiceId}. Faculty verification is pending.`,
       targetBatchTitle: targetFee?.monthYear || 'Fee Desk',
       referenceId: invoiceId,
       actionScreen: 'FEES',
@@ -1967,8 +2095,9 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const targetFee = feeRecords.find((f) => f.invoiceId === invoiceId);
     const amount = targetFee ? targetFee.amountDue : 1500;
-    const utr = targetFee?.manualPaymentUtr || 'Verified';
-    const finalMethod = `Manual UPI (Approved by Faculty · UTR: ${utr})`;
+    const utr = targetFee?.utrNumber || targetFee?.manualPaymentUtr || 'Verified';
+    const finalMethod = `UPI Transfer (Approved · UTR: ${utr})`;
+    const approverName = currentTeacher?.name || userProfile?.fullName || 'Faculty Admin';
 
     setFeeRecords((prev) =>
       prev.map((f) =>
@@ -1980,6 +2109,8 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
               paymentMethod: finalMethod,
               paidAt: nowStr,
               approvalStatus: 'APPROVED',
+              approvedBy: approverName,
+              approvedAt: nowStr,
               manualPaymentClaimed: false
             }
           : f
@@ -1993,6 +2124,8 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         paymentMethod: finalMethod,
         paidAt: nowStr,
         approvalStatus: 'APPROVED',
+        approvedBy: approverName,
+        approvedAt: nowStr,
         manualPaymentClaimed: false
       });
     } catch (err) {
@@ -2006,7 +2139,7 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       targetBatchTitle: targetFee?.monthYear || 'Fee Desk',
       referenceId: invoiceId,
       actionScreen: 'FEES',
-      authorName: currentTeacher.name
+      authorName: approverName
     });
   };
 
@@ -2026,6 +2159,7 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     try {
       await updateDoc(doc(db, 'fees', invoiceId), {
+        status: 'PENDING',
         manualPaymentClaimed: false,
         manualPaymentUtr: null,
         approvalStatus: 'REJECTED'
@@ -2428,6 +2562,8 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         authLoading,
         loginWithEmail,
         signupWithEmail,
+        retryRoleVerification,
+        cancelSignupAndCleanup,
         quickDemoLogin,
         logout,
         currentStudent,

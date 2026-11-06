@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useTuition } from '../../context/TuitionContext';
 import { AttendanceStatus } from '../../types';
 import { MessageLogsModal } from '../common/MessageLogsModal';
+import { openWhatsAppClickToChat } from '../../services/messagingService';
 import {
   CheckCircle2,
   Send,
@@ -35,7 +36,6 @@ export const TeacherAttendanceScreen: React.FC = () => {
   const [selectedBatchId, setSelectedBatchId] = useState('b1');
   const [sessionDate, setSessionDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [preferredChannel, setPreferredChannel] = useState<'SMS' | 'WHATSAPP'>('SMS');
   const [isDispatching, setIsDispatching] = useState(false);
   const [dispatchResult, setDispatchResult] = useState<{
     count: number;
@@ -71,8 +71,8 @@ export const TeacherAttendanceScreen: React.FC = () => {
   };
 
   /**
-   * Dispatches real SMS or WhatsApp messages through Cloud Function (MSG91 / WhatsApp Cloud API)
-   * to guardianPhone and sends FCM Push notifications, logging all sends in Firestore.
+   * Dispatches zero-cost in-app and FCM Push notifications via Express server,
+   * and provides 1-click WhatsApp Click-to-Chat (wa.me) links, logging all sends in Firestore.
    */
   const handleSaveAndNotify = async () => {
     setIsDispatching(true);
@@ -97,20 +97,19 @@ export const TeacherAttendanceScreen: React.FC = () => {
     // 2. Filter absent and late students
     const absentOrLate = students.filter((s) => s.status === 'ABSENT' || s.status === 'LATE');
     const sentRecipients: string[] = [];
-    let detectedProvider = preferredChannel === 'WHATSAPP' ? 'WhatsApp Cloud API' : 'MSG91 SMS Gateway';
 
-    // 3. Dispatch real messages to guardianPhone for each student
+    // 3. Dispatch zero-cost in-app and FCM push notifications
     for (const s of absentOrLate) {
       const content = `Dear ${s.guardianName}, your ward ${s.name} was marked ${s.status} for ${selectedBatch.title} on ${sessionDate}. If this was unplanned, please contact the center.`;
 
-      // Real SMS / WhatsApp dispatch via Cloud Function
-      const res = await sendGuardianSmsOrWhatsApp({
+      // Zero-cost in-app notification & FCM push
+      await sendGuardianSmsOrWhatsApp({
         recipientPhone: s.guardianPhone,
         recipientName: s.guardianName,
         studentId: s.id,
         studentName: s.name,
         messageType: 'ATTENDANCE_ALERT',
-        channel: preferredChannel,
+        channel: 'IN_APP',
         title: `Attendance Alert: ${s.name} (${s.status})`,
         content,
         metadata: {
@@ -121,8 +120,6 @@ export const TeacherAttendanceScreen: React.FC = () => {
         }
       });
 
-      if (res.provider === 'WHATSAPP_CLOUD') detectedProvider = 'WhatsApp Cloud API';
-      if (res.provider === 'MSG91') detectedProvider = 'MSG91 SMS Flow';
       sentRecipients.push(`${s.name} → ${s.guardianPhone}`);
 
       // Dispatch FCM Push notification
@@ -141,18 +138,38 @@ export const TeacherAttendanceScreen: React.FC = () => {
     setIsDispatching(false);
     setDispatchResult({
       count: absentOrLate.length,
-      channel: preferredChannel,
+      channel: 'In-App + FCM Push',
       recipients: sentRecipients,
-      provider: detectedProvider
+      provider: 'Zero-Cost FCM Dispatcher'
     });
 
     setTimeout(() => {
       setDispatchResult(null);
-    }, 9000);
+    }, 7000);
   };
 
   /**
-   * Direct individual alert for a specific student's guardian
+   * Opens official WhatsApp Click-to-Chat (wa.me) directly for an individual student
+   */
+  const handleSendOnWhatsApp = async (student: StudentAttendanceItem) => {
+    const content = `Dear ${student.guardianName}, tuition alert from Apex Academy: your ward ${student.name} was marked ${student.status} for ${selectedBatch.title} on ${sessionDate}. If this was unplanned, please contact the center.`;
+
+    await openWhatsAppClickToChat(student.guardianPhone, content, {
+      studentId: student.id,
+      studentName: student.name,
+      recipientName: student.guardianName,
+      messageType: 'ATTENDANCE_ALERT',
+      title: `Attendance Alert: ${student.name} (${student.status})`
+    });
+
+    setSingleStudentNotice(
+      `WhatsApp Click-to-Chat opened for ${student.guardianName} (${student.guardianPhone}) & logged in audit records.`
+    );
+    setTimeout(() => setSingleStudentNotice(null), 5000);
+  };
+
+  /**
+   * Direct individual alert via In-App / FCM push
    */
   const handleSendDirectAlert = async (student: StudentAttendanceItem) => {
     const content = `Dear ${student.guardianName}, tuition alert for ${student.name}: status is ${student.status} for ${selectedBatch.title} session on ${sessionDate}. Contact us for queries.`;
@@ -163,7 +180,7 @@ export const TeacherAttendanceScreen: React.FC = () => {
       studentId: student.id,
       studentName: student.name,
       messageType: 'ATTENDANCE_ALERT',
-      channel: preferredChannel,
+      channel: 'IN_APP',
       title: `Direct Alert: ${student.name} marked ${student.status}`,
       content,
       metadata: {
@@ -184,7 +201,7 @@ export const TeacherAttendanceScreen: React.FC = () => {
     });
 
     setSingleStudentNotice(
-      `Real ${preferredChannel} dispatched to ${student.guardianName} (${student.guardianPhone}) via ${res.provider}! Msg ID: ${res.messageId}`
+      `In-App & FCM alert dispatched to ${student.guardianName} (${student.guardianPhone}). Msg ID: ${res.messageId}`
     );
     setTimeout(() => setSingleStudentNotice(null), 5000);
   };
@@ -205,11 +222,11 @@ export const TeacherAttendanceScreen: React.FC = () => {
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-bold uppercase tracking-wider text-teal-800 bg-teal-50 px-2 py-0.5 rounded border border-teal-200 flex items-center gap-1">
                 <ShieldCheck className="w-3 h-3 text-teal-600" />
-                <span>Live MSG91 & WhatsApp Cloud API Gateway</span>
+                <span>Zero-Cost In-App, FCM & WhatsApp (wa.me)</span>
               </span>
             </div>
             <h2 className="text-xl font-bold text-slate-900 tracking-tight mt-1">Mark Batch Attendance & Notify Guardians</h2>
-            <p className="text-xs text-slate-500">Record session roll call and dispatch real messages directly to guardianPhone</p>
+            <p className="text-xs text-slate-500">Record session roll call and dispatch alerts to guardians without SMS charges</p>
           </div>
 
           <div className="flex items-center gap-2 self-start sm:self-center">
@@ -263,32 +280,14 @@ export const TeacherAttendanceScreen: React.FC = () => {
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Dispatch Gateway Channel</label>
-            <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-lg border border-slate-200 text-xs">
-              <button
-                type="button"
-                onClick={() => setPreferredChannel('SMS')}
-                className={`py-1.5 px-2 rounded-md font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors ${
-                  preferredChannel === 'SMS'
-                    ? 'bg-white text-blue-800 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Smartphone className="w-3.5 h-3.5" />
-                <span>MSG91 SMS</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setPreferredChannel('WHATSAPP')}
-                className={`py-1.5 px-2 rounded-md font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors ${
-                  preferredChannel === 'WHATSAPP'
-                    ? 'bg-white text-emerald-800 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>WhatsApp</span>
-              </button>
+            <div className="p-2 bg-slate-100 rounded-lg border border-slate-200 text-xs flex items-center justify-between">
+              <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                <Smartphone className="w-3.5 h-3.5 text-teal-700" />
+                <span>In-App & FCM Push</span>
+              </span>
+              <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded uppercase">
+                Zero Cost
+              </span>
             </div>
           </div>
         </div>
@@ -448,15 +447,26 @@ export const TeacherAttendanceScreen: React.FC = () => {
                   E (Excused)
                 </button>
 
-                {/* Direct instant alert trigger */}
+                {/* Send on WhatsApp (wa.me) button */}
+                <button
+                  type="button"
+                  onClick={() => handleSendOnWhatsApp(student)}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 transition-colors flex items-center gap-1 cursor-pointer"
+                  title={`Open WhatsApp Click-to-Chat (wa.me) directly for ${student.guardianPhone}`}
+                >
+                  <MessageSquare className="w-3 h-3 text-emerald-700" />
+                  <span>Send on WhatsApp</span>
+                </button>
+
+                {/* Direct in-app & push alert trigger */}
                 <button
                   type="button"
                   onClick={() => handleSendDirectAlert(student)}
                   className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 transition-colors flex items-center gap-1 cursor-pointer"
-                  title={`Send real ${preferredChannel} message directly to ${student.guardianPhone}`}
+                  title={`Dispatch in-app & FCM alert directly to ${student.guardianPhone}`}
                 >
                   <Send className="w-3 h-3 text-teal-600" />
-                  <span>Notify</span>
+                  <span>FCM Alert</span>
                 </button>
               </div>
             </div>
@@ -474,12 +484,12 @@ export const TeacherAttendanceScreen: React.FC = () => {
           {isDispatching ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Dispatching Real Messages through Cloud Function ({preferredChannel})...</span>
+              <span>Dispatching In-App & FCM Push Notifications...</span>
             </>
           ) : (
             <>
               <Send className="w-4 h-4" />
-              <span>Save & Dispatch Real Messages to Guardians ({sessionDate})</span>
+              <span>Save Attendance & Dispatch In-App/FCM Alerts ({sessionDate})</span>
             </>
           )}
         </button>

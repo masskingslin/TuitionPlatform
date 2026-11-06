@@ -3,6 +3,7 @@ import { useTuition } from '../../context/TuitionContext';
 import { FeePaymentStatus, FeeRecord } from '../../types';
 import { UpiQrPaymentModal } from '../payment/UpiQrPaymentModal';
 import { MessageLogsModal } from '../common/MessageLogsModal';
+import { openWhatsAppClickToChat } from '../../services/messagingService';
 import {
   Receipt,
   CheckCircle2,
@@ -14,7 +15,8 @@ import {
   X,
   ShieldCheck,
   History,
-  Smartphone
+  Smartphone,
+  MessageSquare
 } from 'lucide-react';
 
 const studentGuardianDirectory: Record<string, { guardianName: string; guardianPhone: string }> = {
@@ -54,7 +56,9 @@ export const TeacherFeeTrackerScreen: React.FC = () => {
     return f.status !== 'PAID' ? acc + (f.amountDue - f.amountPaid) : acc;
   }, 0);
 
-  const pendingClaims = feeRecords.filter((f) => f.manualPaymentClaimed && f.status !== 'PAID');
+  const pendingClaims = feeRecords.filter(
+    (f) => (f.manualPaymentClaimed || f.status === 'PENDING_APPROVAL') && f.status !== 'PAID'
+  );
 
   const collectionPercent = totalBilled > 0
     ? ((totalCollected / totalBilled) * 100).toFixed(0)
@@ -64,6 +68,8 @@ export const TeacherFeeTrackerScreen: React.FC = () => {
     switch (status) {
       case 'PAID':
         return 'text-[#2E7D32] bg-emerald-50 border-emerald-200';
+      case 'PENDING_APPROVAL':
+        return 'text-amber-800 bg-amber-50 border-amber-300 font-bold';
       case 'PENDING':
         return 'text-[#EF6C00] bg-amber-50 border-amber-200';
       case 'OVERDUE':
@@ -72,8 +78,33 @@ export const TeacherFeeTrackerScreen: React.FC = () => {
   };
 
   /**
-   * Dispatches real SMS reminder via Cloud Function (MSG91 / WhatsApp Cloud API) to guardianPhone
-   * and sends an FCM Push notification for fees, logging all sends in Firestore.
+   * Opens official WhatsApp Click-to-Chat (wa.me) with prefilled tuition reminder
+   * and records an audit log entry in notification_logs. 100% free with no gateway fees.
+   */
+  const handleSendWhatsAppReminder = async (fee: FeeRecord) => {
+    const guardian = studentGuardianDirectory[fee.studentId] || {
+      guardianName: 'Guardian',
+      guardianPhone: '+91 98765 43210'
+    };
+    const pendingAmount = fee.amountDue - (fee.amountPaid || 0);
+    const content = `Tuition Fee Reminder from Apex Academy: Invoice #${fee.invoiceId} for ${fee.studentName} (${fee.monthYear}) of Rs.${pendingAmount.toLocaleString()} is due on ${fee.dueDate}. Please pay directly to UPI: apex.academy@okaxis. Contact institute for assistance.`;
+
+    await openWhatsAppClickToChat(guardian.guardianPhone, content, {
+      studentId: fee.studentId,
+      studentName: fee.studentName,
+      recipientName: guardian.guardianName,
+      messageType: 'FEE_REMINDER',
+      title: `Fee Due Reminder: ${fee.studentName}`
+    });
+
+    setReminderNotice(
+      `WhatsApp Click-to-Chat opened for ${guardian.guardianName} (${guardian.guardianPhone}) & logged in audit records.`
+    );
+    setTimeout(() => setReminderNotice(null), 5000);
+  };
+
+  /**
+   * Dispatches zero-cost in-app notification & FCM Push notification for fees.
    */
   const handleSendReminder = async (fee: FeeRecord) => {
     const guardian = studentGuardianDirectory[fee.studentId] || {
@@ -81,16 +112,16 @@ export const TeacherFeeTrackerScreen: React.FC = () => {
       guardianPhone: '+91 98765 43210'
     };
     const pendingAmount = fee.amountDue - (fee.amountPaid || 0);
-    const content = `Tuition Fee Reminder from Apex Academy: Invoice #${fee.invoiceId} for ${fee.studentName} (${fee.monthYear}) of Rs.${pendingAmount.toLocaleString()} is due on ${fee.dueDate}. Pay online via Razorpay or UPI: tuitioncenter@okaxis. Contact center for assistance.`;
+    const content = `Tuition Fee Reminder from Apex Academy: Invoice #${fee.invoiceId} for ${fee.studentName} (${fee.monthYear}) of Rs.${pendingAmount.toLocaleString()} is due on ${fee.dueDate}. Pay directly via UPI: apex.academy@okaxis.`;
 
-    // 1. Dispatch real SMS / WhatsApp through Cloud Function
+    // 1. Dispatch zero-cost in-app notification & FCM push
     const res = await sendGuardianSmsOrWhatsApp({
       recipientPhone: guardian.guardianPhone,
       recipientName: guardian.guardianName,
       studentId: fee.studentId,
       studentName: fee.studentName,
       messageType: 'FEE_REMINDER',
-      channel: 'SMS',
+      channel: 'IN_APP',
       title: `Fee Due Reminder: ${fee.studentName} (${fee.monthYear})`,
       content,
       metadata: {
@@ -113,9 +144,9 @@ export const TeacherFeeTrackerScreen: React.FC = () => {
     });
 
     setReminderNotice(
-      `Real message dispatched to ${guardian.guardianName} (${guardian.guardianPhone}) via ${res.provider}! Msg ID: ${res.messageId}. Logged to Firestore.`
+      `In-App & FCM alert dispatched to ${guardian.guardianName} (${guardian.guardianPhone}). Msg ID: ${res.messageId}. Logged to audit log.`
     );
-    setTimeout(() => setReminderNotice(null), 6000);
+    setTimeout(() => setReminderNotice(null), 5000);
   };
 
   const handleApprove = async (invoiceId: string, studentName: string) => {
@@ -140,15 +171,10 @@ export const TeacherFeeTrackerScreen: React.FC = () => {
     }
   };
 
-  const handleUpiSuccess = (paymentMethod: string, utr: string, paymentId?: string) => {
+  const handleUpiSuccess = (paymentMethod: string, utr: string) => {
     if (!activeUpiInvoice) return;
-    if (paymentId) {
-      payFee(activeUpiInvoice.invoiceId, paymentMethod, paymentId);
-      setReminderNotice(`Razorpay verified payment confirmed for ${activeUpiInvoice.studentName}! Payment ID: ${paymentId}`);
-    } else {
-      payFee(activeUpiInvoice.invoiceId, `${paymentMethod} (UTR: ${utr})`);
-      setReminderNotice(`Desk payment confirmed for ${activeUpiInvoice.studentName}! Reference: ${utr}`);
-    }
+    payFee(activeUpiInvoice.invoiceId, `${paymentMethod} (UTR: ${utr})`);
+    setReminderNotice(`Payment recorded for ${activeUpiInvoice.studentName}! Reference: ${utr}`);
     setActiveUpiInvoice(null);
     setTimeout(() => setReminderNotice(null), 4000);
   };
@@ -166,7 +192,6 @@ export const TeacherFeeTrackerScreen: React.FC = () => {
       'Due Date',
       'Settled Via',
       'Payment Reference / UTR',
-      'Payment ID (Razorpay)',
       'Settlement Timestamp'
     ];
 
@@ -234,11 +259,11 @@ export const TeacherFeeTrackerScreen: React.FC = () => {
               </span>
               <span className="text-[10px] bg-emerald-700/10 text-emerald-800 font-bold px-2 py-0.5 rounded border border-emerald-700/20 flex items-center gap-1">
                 <ShieldCheck className="w-3 h-3 text-emerald-700" />
-                <span>Live MSG91, WhatsApp & FCM Active</span>
+                <span>Zero-Fee UPI & In-App / WhatsApp Active</span>
               </span>
             </div>
             <h2 className="text-xl font-bold text-slate-900 tracking-tight mt-1">Tuition Fee Collection Overview</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Tracking monthly dues with real guardian SMS & WhatsApp dispatch</p>
+            <p className="text-xs text-slate-500 mt-0.5">Tracking monthly dues with WhatsApp Click-to-Chat & UPI approval</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
@@ -464,20 +489,20 @@ export const TeacherFeeTrackerScreen: React.FC = () => {
                   Settled via: <span className="font-semibold text-slate-800">{fee.paymentMethod}</span>
                 </div>
               )}
-              {fee.paymentId && (
+              {(fee.utrNumber || fee.manualPaymentUtr) && (
                 <div className="text-[11px] text-emerald-800 font-mono flex items-center gap-1">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                  <span>Razorpay ID:</span>
-                  <span className="font-semibold">{fee.paymentId}</span>
+                  <span>UTR Ref:</span>
+                  <span className="font-semibold">{fee.utrNumber || fee.manualPaymentUtr}</span>
                 </div>
               )}
 
-              {/* Manual payment claim info */}
-              {fee.manualPaymentClaimed && fee.status !== 'PAID' && (
+              {/* UPI UTR claim info */}
+              {(fee.status === 'PENDING_APPROVAL' || (fee.manualPaymentClaimed && fee.status !== 'PAID')) && (
                 <div className="p-2 bg-amber-100/60 border border-amber-300 rounded-lg text-amber-950 text-xs flex items-center gap-2 mt-1">
                   <Clock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
                   <span>
-                    Claimed via UPI UTR: <strong className="font-mono">{fee.manualPaymentUtr || 'Pending'}</strong> (Awaiting your approval)
+                    Claimed via UPI UTR: <strong className="font-mono">{fee.utrNumber || fee.manualPaymentUtr || 'Pending'}</strong> (Awaiting your approval)
                   </span>
                 </div>
               )}
@@ -490,7 +515,7 @@ export const TeacherFeeTrackerScreen: React.FC = () => {
 
               {fee.status !== 'PAID' ? (
                 <>
-                  {fee.manualPaymentClaimed ? (
+                  {(fee.status === 'PENDING_APPROVAL' || fee.manualPaymentClaimed) ? (
                     <div className="flex items-center gap-1.5">
                       <button
                         disabled={actionLoading === fee.invoiceId}
@@ -507,28 +532,37 @@ export const TeacherFeeTrackerScreen: React.FC = () => {
                         title="Approve and mark fee as PAID"
                       >
                         <Check className="w-3.5 h-3.5" />
-                        <span>Approve</span>
+                        <span>Approve (Mark PAID)</span>
                       </button>
                     </div>
                   ) : (
                     <>
-                      {/* Real SMS & WhatsApp Reminder Dispatch button */}
+                      {/* Send on WhatsApp (wa.me) button */}
+                      <button
+                        onClick={() => handleSendWhatsAppReminder(fee)}
+                        className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                        title="Open WhatsApp Click-to-Chat (wa.me) with prefilled fee reminder"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5 text-emerald-700" />
+                        <span>Send on WhatsApp</span>
+                      </button>
+
                       <button
                         onClick={() => handleSendReminder(fee)}
-                        className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                        title="Dispatch real SMS / WhatsApp reminder to guardianPhone and send FCM push"
+                        className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1 cursor-pointer shadow-2xs"
+                        title="Send in-app reminder and FCM push notification"
                       >
                         <Smartphone className="w-3.5 h-3.5" />
-                        <span>Send SMS/WA Alert</span>
+                        <span>FCM</span>
                       </button>
 
                       <button
                         onClick={() => setActiveUpiInvoice(fee)}
                         className="px-3 py-1.5 bg-[#00695C] hover:bg-[#005a4e] text-white text-xs font-bold rounded-lg transition-colors shadow-2xs flex items-center gap-1 cursor-pointer"
-                        title="Open dynamic UPI QR or Razorpay for parent to pay"
+                        title="Open UPI QR and deep link for parent to pay"
                       >
                         <QrCode className="w-3.5 h-3.5" />
-                        <span>Collect Online</span>
+                        <span>Collect UPI</span>
                       </button>
 
                       <button

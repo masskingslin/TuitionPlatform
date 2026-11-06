@@ -3,6 +3,7 @@ import { doc, setDoc } from 'firebase/firestore';
 import { app, db } from '../firebase';
 import { NotificationLog } from '../types';
 import firebaseConfig from '../../firebase-applet-config.json';
+import { fetchWithAuth } from './apiClient';
 
 export interface FcmPushParams {
   title: string;
@@ -114,9 +115,8 @@ export async function dispatchFcmPush(params: FcmPushParams): Promise<FcmPushRes
   };
 
   try {
-    const response = await fetch('/api/sendFcmNotification', {
+    const response = await fetchWithAuth('/api/sendFcmNotification', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params)
     });
 

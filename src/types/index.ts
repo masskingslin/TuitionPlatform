@@ -2,7 +2,7 @@ export type UserRole = 'STUDENT' | 'TEACHER' | 'ADMIN' | 'PARENT';
 
 export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
 
-export type FeePaymentStatus = 'PAID' | 'PENDING' | 'OVERDUE';
+export type FeePaymentStatus = 'PAID' | 'PENDING' | 'OVERDUE' | 'PENDING_APPROVAL';
 
 export interface AuthRequest {
   email: string;
@@ -137,11 +137,14 @@ export interface FeeRecord {
   paymentMethod?: string;
   paidAt?: string;
   paymentId?: string;
-  razorpayOrderId?: string;
   approvalStatus?: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
+  utrNumber?: string;
+  submittedUtrAt?: string;
   manualPaymentClaimed?: boolean;
   manualPaymentUtr?: string;
   manualPaymentSubmittedAt?: string;
+  approvedBy?: string;
+  approvedAt?: string;
 }
 
 export interface Announcement {
@@ -282,6 +285,8 @@ export interface SchoolInfo {
   isSchoolAdmin?: boolean;
   studentCode?: string;
   teacherCode?: string;
+  upiVpa?: string;
+  upiPayeeName?: string;
   teacherCount: number;
   studentCount: number;
   parentCount: number;
@@ -301,7 +306,7 @@ export interface SchoolMember {
   joinedAt: string;
 }
 
-export type MessageChannel = 'SMS' | 'WHATSAPP' | 'FCM_PUSH';
+export type MessageChannel = 'SMS' | 'WHATSAPP' | 'FCM_PUSH' | 'IN_APP';
 export type MessageType = 'ATTENDANCE_ALERT' | 'FEE_REMINDER' | 'HOMEWORK' | 'ANNOUNCEMENT';
 export type MessageDeliveryStatus = 'DELIVERED' | 'SENT' | 'FAILED';
 
@@ -315,7 +320,7 @@ export interface NotificationLog {
   studentName?: string;
   title?: string;
   content: string;
-  provider: 'MSG91' | 'WHATSAPP_CLOUD' | 'FCM' | 'SYSTEM_DISPATCHER';
+  provider: 'MSG91' | 'WHATSAPP_CLOUD' | 'WHATSAPP_WEB' | 'FCM' | 'IN_APP_DISPATCHER' | 'SYSTEM_DISPATCHER';
   providerMessageId?: string;
   status: MessageDeliveryStatus;
   sentAt: string;

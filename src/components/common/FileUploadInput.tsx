@@ -1,19 +1,15 @@
-import React, { useState, useRef } from 'react';
-import { uploadFileToStorage, validateFile, downloadFile } from '../../services/storageService';
+import React, { useState } from 'react';
+import { validateHttpsUrl, openExternalLink } from '../../services/storageService';
 import {
-  Upload,
-  FileText,
-  Image as ImageIcon,
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
+  Link2,
   ExternalLink,
-  Download
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 
 interface FileUploadInputProps {
   label: string;
-  folder: 'question_papers' | 'answer_sheets' | 'resources';
+  folder?: 'question_papers' | 'answer_sheets' | 'resources';
   onFileUploaded: (result: {
     downloadUrl: string;
     fileName: string;
@@ -32,86 +28,53 @@ interface FileUploadInputProps {
 
 export const FileUploadInput: React.FC<FileUploadInputProps> = ({
   label,
-  folder,
   onFileUploaded,
   currentFileName,
-  currentFileSize,
   currentFileUrl,
-  accept = 'application/pdf,image/*',
-  maxSizeMB = 10,
   accentColor = 'teal'
 }) => {
-  const [isUploading, setIsUploading] = useState(false);
+  const [urlInput, setUrlInput] = useState(currentFileUrl || '');
+  const [titleInput, setTitleInput] = useState(currentFileName || '');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [dragOver, setDragOver] = useState(false);
-  const [uploadedInfo, setUploadedInfo] = useState<{
-    name: string;
-    size: string;
-    url: string;
-  } | null>(
-    currentFileName
-      ? {
-          name: currentFileName,
-          size: currentFileSize || 'File attached',
-          url: currentFileUrl || ''
-        }
-      : null
-  );
+  const [isConfirmed, setIsConfirmed] = useState(Boolean(currentFileUrl));
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  const handleProcessFile = async (file: File) => {
+  const handleApplyLink = () => {
     setErrorMsg(null);
-    const validation = validateFile(file);
+    const validation = validateHttpsUrl(urlInput);
     if (!validation.valid) {
-      setErrorMsg(validation.error || 'Invalid file.');
+      setErrorMsg(validation.error || 'Please enter a valid https:// URL.');
       return;
     }
 
-    setIsUploading(true);
-    try {
-      const res = await uploadFileToStorage(file, folder);
-      setUploadedInfo({
-        name: res.fileName,
-        size: res.fileSizeFormatted,
-        url: res.downloadUrl
-      });
-      onFileUploaded(res);
-    } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Upload to Firebase Storage failed.');
-    } finally {
-      setIsUploading(false);
+    const trimmedUrl = urlInput.trim();
+    let derivedName = titleInput.trim();
+    if (!derivedName) {
+      try {
+        const parsed = new URL(trimmedUrl);
+        derivedName = parsed.hostname + parsed.pathname.slice(-20);
+      } catch {
+        derivedName = 'Shared Cloud Resource';
+      }
     }
-  };
 
-  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      handleProcessFile(file);
-    }
+    setIsConfirmed(true);
+    onFileUploaded({
+      downloadUrl: trimmedUrl,
+      fileName: derivedName,
+      fileSizeFormatted: 'HTTPS Cloud Link',
+      fileSizeBytes: 0,
+      contentType: 'text/html'
+    });
   };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      handleProcessFile(file);
-    }
-  };
-
-  const isPdf =
-    uploadedInfo?.name.toLowerCase().endsWith('.pdf') ||
-    uploadedInfo?.name.includes('pdf');
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <div className="flex items-center justify-between">
         <label className="block text-xs font-semibold text-slate-700">
           {label}
         </label>
         <span className="text-[10px] text-slate-500 font-mono">
-          PDF or Image · Max {maxSizeMB} MB
+          Google Drive, YouTube, Docs, etc.
         </span>
       </div>
 
@@ -122,120 +85,77 @@ export const FileUploadInput: React.FC<FileUploadInputProps> = ({
         </div>
       )}
 
-      {/* Hidden native input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept={accept}
-        onChange={handleFileInputChange}
-        className="hidden"
-      />
-
-      {isUploading ? (
-        <div className="border border-dashed border-indigo-300 bg-indigo-50/50 rounded-xl p-4 flex flex-col items-center justify-center gap-2 text-indigo-900 animate-pulse">
-          <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
-          <span className="text-xs font-semibold">Uploading to Firebase Storage...</span>
-          <span className="text-[11px] text-indigo-700/80">Securing file download URL</span>
-        </div>
-      ) : uploadedInfo ? (
-        <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+      {isConfirmed && urlInput.trim() ? (
+        <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0 text-slate-700">
-              {isPdf ? (
-                <FileText className="w-5 h-5 text-rose-600" />
-              ) : (
-                <ImageIcon className="w-5 h-5 text-indigo-600" />
-              )}
+            <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0 text-indigo-600">
+              <Link2 className="w-4 h-4" />
             </div>
             <div className="min-w-0">
-              <span className="font-bold text-xs text-slate-900 block truncate" title={uploadedInfo.name}>
-                {uploadedInfo.name}
+              <span className="font-bold text-xs text-slate-900 block truncate">
+                {titleInput.trim() || 'Shared Cloud Resource'}
               </span>
-              <div className="flex items-center gap-2 text-[11px] text-slate-500 font-mono">
-                <span>{uploadedInfo.size}</span>
-                <span className="text-emerald-700 font-semibold flex items-center gap-0.5">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Ready
+              <div className="flex items-center gap-2 text-[11px] text-slate-500 truncate">
+                <span className="truncate">{urlInput}</span>
+                <span className="text-emerald-700 font-semibold flex items-center gap-0.5 shrink-0">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Linked
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
-            {uploadedInfo.url && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => downloadFile(uploadedInfo.url, uploadedInfo.name)}
-                  className="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
-                  title="Download File"
-                >
-                  <Download className="w-3.5 h-3.5 text-slate-600" />
-                  <span>Download</span>
-                </button>
-
-                <a
-                  href={uploadedInfo.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
-                  title="Open Preview in New Tab"
-                >
-                  <ExternalLink className="w-3.5 h-3.5 text-slate-600" />
-                  <span>Open</span>
-                </a>
-              </>
-            )}
-
+          <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => openExternalLink(urlInput)}
+              className="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-slate-600" />
+              <span>Open</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsConfirmed(false)}
               className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
                 accentColor === 'teal'
                   ? 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200'
-                  : accentColor === 'blue'
-                  ? 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200'
                   : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200'
               }`}
             >
-              Replace
+              Edit Link
             </button>
           </div>
         </div>
       ) : (
-        <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragOver(true);
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all ${
-            dragOver
-              ? accentColor === 'teal'
-                ? 'border-teal-500 bg-teal-50/70 scale-[0.99]'
-                : 'border-blue-500 bg-blue-50/70 scale-[0.99]'
-              : 'border-slate-300 hover:border-teal-400 bg-slate-50/50 hover:bg-white'
-          }`}
-        >
-          <div className="flex flex-col items-center justify-center gap-1.5">
-            <div
-              className={`w-9 h-9 rounded-full flex items-center justify-center ${
-                accentColor === 'teal'
-                  ? 'bg-teal-50 border border-teal-100 text-teal-700'
-                  : 'bg-blue-50 border border-blue-100 text-blue-700'
-              }`}
+        <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
+          <div className="space-y-1">
+            <input
+              type="url"
+              value={urlInput}
+              onChange={(e) => {
+                setUrlInput(e.target.value);
+                if (errorMsg) setErrorMsg(null);
+              }}
+              placeholder="Paste secure link: https://drive.google.com/..."
+              className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-indigo-500 font-mono"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={titleInput}
+              onChange={(e) => setTitleInput(e.target.value)}
+              placeholder="Link Title (e.g., Chapter 8 Solution PDF)"
+              className="flex-1 px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+            />
+            <button
+              type="button"
+              onClick={handleApplyLink}
+              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer shadow-xs transition-colors shrink-0"
             >
-              <Upload className="w-4 h-4" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-slate-800">
-                Click to browse or drop file here
-              </p>
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                PDF or image file up to {maxSizeMB} MB
-              </p>
-            </div>
+              <span>Attach Link</span>
+            </button>
           </div>
         </div>
       )}

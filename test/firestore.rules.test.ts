@@ -223,4 +223,66 @@ describe('Firestore Security Rules - Security Hardening Suite', () => {
       );
     }
   });
+
+  // 6. Student can only set PENDING_APPROVAL on own fee; cannot mark PAID
+  test('6. Student CANNOT mark fee as PAID, can only set PENDING_APPROVAL with UTR', async () => {
+    const feesBlock = rulesContent.slice(
+      rulesContent.indexOf('match /fees/{feeId}'),
+      rulesContent.indexOf('match /announcements/{announcementId}')
+    );
+    expect(feesBlock).toContain("request.resource.data.status == 'PENDING_APPROVAL'");
+    expect(feesBlock).toContain('isTeacherOrAdmin()');
+
+    if (testEnv) {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        const db = ctx.firestore();
+        await db.collection('users').doc('stu_fee_test').set({
+          role: 'STUDENT',
+          studentId: 'stu_fee_test'
+        });
+        await db.collection('users').doc('teach_fee_test').set({
+          role: 'TEACHER',
+          teacherId: 'teach_fee_test'
+        });
+        await db.collection('fees').doc('inv_test_101').set({
+          invoiceId: 'inv_test_101',
+          studentId: 'stu_fee_test',
+          amountDue: 1500,
+          amountPaid: 0,
+          status: 'PENDING'
+        });
+      });
+
+      const studentCtx = testEnv.authenticatedContext('stu_fee_test');
+      const studentDb = studentCtx.firestore();
+
+      // Student attempting to mark fee as PAID MUST FAIL
+      await assertFails(
+        studentDb.collection('fees').doc('inv_test_101').update({
+          status: 'PAID',
+          amountPaid: 1500
+        })
+      );
+
+      // Student submitting UTR and setting status to PENDING_APPROVAL MUST SUCCEED
+      await assertSucceeds(
+        studentDb.collection('fees').doc('inv_test_101').update({
+          status: 'PENDING_APPROVAL',
+          utrNumber: '123456789012'
+        })
+      );
+
+      // Teacher approving fee to PAID MUST SUCCEED
+      const teacherCtx = testEnv.authenticatedContext('teach_fee_test');
+      const teacherDb = teacherCtx.firestore();
+      await assertSucceeds(
+        teacherDb.collection('fees').doc('inv_test_101').update({
+          status: 'PAID',
+          amountPaid: 1500,
+          approvalStatus: 'APPROVED'
+        })
+      );
+    }
+  });
 });
+

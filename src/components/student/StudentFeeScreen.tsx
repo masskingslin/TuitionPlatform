@@ -22,6 +22,8 @@ export const StudentFeeScreen: React.FC = () => {
     switch (status) {
       case 'PAID':
         return 'text-[#2E7D32] bg-emerald-50 border-emerald-200';
+      case 'PENDING_APPROVAL':
+        return 'text-amber-800 bg-amber-50 border-amber-300 font-bold';
       case 'PENDING':
         return 'text-[#EF6C00] bg-amber-50 border-amber-200';
       case 'OVERDUE':
@@ -29,27 +31,11 @@ export const StudentFeeScreen: React.FC = () => {
     }
   };
 
-  const handlePaymentSuccess = (paymentMethod: string, utr: string, paymentId?: string) => {
+  const handlePaymentSuccess = (_paymentMethod: string, utr: string) => {
     if (!selectedInvoice) return;
     setPaymentSuccess(selectedInvoice.invoiceId);
     setLastUtr(utr);
-
-    if (paymentId) {
-      // Verified Razorpay transaction: receipt is available immediately
-      const updatedRecord: FeeRecord = {
-        ...selectedInvoice,
-        status: 'PAID',
-        amountPaid: selectedInvoice.amountDue,
-        paymentMethod: paymentMethod,
-        paymentId: paymentId,
-        paidAt: 'Just now'
-      };
-      setSelectedInvoice(null);
-      setReceiptModal(updatedRecord);
-    } else {
-      // Manual UPI claim submitted for teacher approval
-      setSelectedInvoice(null);
-    }
+    setSelectedInvoice(null);
     setTimeout(() => setPaymentSuccess(null), 6000);
   };
 
@@ -63,7 +49,7 @@ export const StudentFeeScreen: React.FC = () => {
               <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Tuition Account Summary</span>
               <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-semibold px-2 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1">
                 <QrCode className="w-3 h-3" />
-                <span>Razorpay & UPI Enabled</span>
+                <span>Direct UPI & QR Enabled</span>
               </span>
             </div>
             <h2 className="text-xl font-bold tracking-tight">Tuition Fee Ledger</h2>
@@ -93,7 +79,7 @@ export const StudentFeeScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Quick Razorpay / UPI CTA Bar if fee pending */}
+        {/* Quick Direct UPI CTA Bar if fee pending */}
         {pendingInvoice && (
           <div className="mt-5 pt-4 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-blue-950/40 -mx-6 -mb-6 p-4 px-6 rounded-b-2xl">
             <div className="flex items-center gap-2.5">
@@ -101,7 +87,7 @@ export const StudentFeeScreen: React.FC = () => {
                 <QrCode className="w-5 h-5" />
               </div>
               <div className="text-xs">
-                <span className="font-bold text-white block">Instant Online Pay via Razorpay / UPI / QR</span>
+                <span className="font-bold text-white block">Direct Online Pay via UPI / QR</span>
                 <span className="text-slate-400">{pendingInvoice.monthYear} installment due on {pendingInvoice.dueDate}</span>
               </div>
             </div>
@@ -174,11 +160,11 @@ export const StudentFeeScreen: React.FC = () => {
                   <span className="text-slate-800 font-semibold">{fee.paymentMethod}</span>
                 </div>
               )}
-              {fee.paymentId && (
+              {(fee.utrNumber || fee.manualPaymentUtr) && (
                 <div className="text-[11px] text-emerald-800 font-mono flex items-center gap-1">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                  <span>Razorpay ID:</span>
-                  <span className="font-semibold text-emerald-900">{fee.paymentId}</span>
+                  <span>UTR Ref:</span>
+                  <span className="font-semibold text-emerald-900">{fee.utrNumber || fee.manualPaymentUtr}</span>
                 </div>
               )}
 
@@ -188,7 +174,7 @@ export const StudentFeeScreen: React.FC = () => {
                   <Clock className="w-4 h-4 text-amber-600 shrink-0" />
                   <div>
                     <span className="font-bold block">Manual UPI Claim Submitted (Awaiting Teacher Approval)</span>
-                    <span className="text-slate-600">UTR / Ref: <span className="font-mono font-bold text-slate-800">{fee.manualPaymentUtr || 'Pending'}</span></span>
+                    <span className="text-slate-600">UTR / Ref: <span className="font-mono font-bold text-slate-800">{fee.utrNumber || fee.manualPaymentUtr || 'Pending'}</span></span>
                   </div>
                 </div>
               )}
@@ -221,7 +207,7 @@ export const StudentFeeScreen: React.FC = () => {
         ))}
       </div>
 
-      {/* Razorpay & UPI Payment Modal */}
+      {/* UPI Payment Modal */}
       {selectedInvoice && (
         <UpiQrPaymentModal
           invoiceId={selectedInvoice.invoiceId}
@@ -269,12 +255,12 @@ export const StudentFeeScreen: React.FC = () => {
               </div>
               <div>
                 <span className="text-slate-500 block">Payment Mode:</span>
-                <span className="font-medium text-slate-800">{receiptModal.paymentMethod || 'Razorpay Online Checkout'}</span>
+                <span className="font-medium text-slate-800">{receiptModal.paymentMethod || 'Direct UPI Transfer'}</span>
               </div>
-              {receiptModal.paymentId && (
+              {(receiptModal.utrNumber || receiptModal.manualPaymentUtr) && (
                 <div className="col-span-2">
-                  <span className="text-slate-500 block">Razorpay Payment ID:</span>
-                  <span className="font-mono font-bold text-slate-900">{receiptModal.paymentId}</span>
+                  <span className="text-slate-500 block">UPI Reference (UTR):</span>
+                  <span className="font-mono font-bold text-slate-900">{receiptModal.utrNumber || receiptModal.manualPaymentUtr}</span>
                 </div>
               )}
             </div>

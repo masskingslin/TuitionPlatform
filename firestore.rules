@@ -176,9 +176,10 @@ service cloud.firestore {
       );
       allow create, delete: if isTeacherOrAdmin();
       allow update: if isTeacherOrAdmin() || (
-        // Students/Parents can only submit manual payment claims (cannot mark paid or alter amount)
+        // Students/Parents can only set PENDING_APPROVAL on their own fee (cannot mark PAID or alter amounts)
         canAccessStudentData(resource.data.studentId) &&
-        request.resource.data.status == resource.data.status &&
+        request.resource.data.status == 'PENDING_APPROVAL' &&
+        resource.data.status != 'PAID' &&
         request.resource.data.amountPaid == resource.data.amountPaid &&
         request.resource.data.amountDue == resource.data.amountDue
       );

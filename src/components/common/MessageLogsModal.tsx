@@ -28,7 +28,6 @@ export const MessageLogsModal: React.FC<MessageLogsModalProps> = ({ logs, onClos
     return matchesChannel && matchesSearch;
   });
 
-  const smsCount = logs.filter((l) => l.channel === 'SMS').length;
   const waCount = logs.filter((l) => l.channel === 'WHATSAPP').length;
   const fcmCount = logs.filter((l) => l.channel === 'FCM_PUSH').length;
 
@@ -41,7 +40,7 @@ export const MessageLogsModal: React.FC<MessageLogsModalProps> = ({ logs, onClos
             <div className="flex items-center gap-2">
               <span className="text-[10px] uppercase font-bold tracking-wider text-teal-300 bg-teal-900/40 px-2 py-0.5 rounded border border-teal-500/30 flex items-center gap-1">
                 <ShieldCheck className="w-3 h-3" />
-                <span>MSG91 · WhatsApp Cloud · FCM Push</span>
+                <span>Zero-Cost In-App · WhatsApp (wa.me) · FCM</span>
               </span>
               <span className="text-xs text-slate-400 font-mono">Firestore Real-time Audit</span>
             </div>
@@ -50,7 +49,7 @@ export const MessageLogsModal: React.FC<MessageLogsModalProps> = ({ logs, onClos
               <span>Message & Push Dispatch Log</span>
             </h3>
             <p className="text-xs text-slate-300 mt-0.5">
-              Live audit record of SMS and WhatsApp messages sent to guardianPhone and FCM push broadcasts.
+              Live audit record of WhatsApp Click-to-Chat links opened and FCM push broadcasts.
             </p>
           </div>
 
@@ -67,15 +66,7 @@ export const MessageLogsModal: React.FC<MessageLogsModalProps> = ({ logs, onClos
         <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 border-b border-slate-200 text-xs">
           <div className="p-2.5 bg-white rounded-xl border border-slate-200 flex items-center justify-between">
             <div>
-              <span className="text-slate-500 block text-[11px] font-medium">MSG91 SMS</span>
-              <span className="text-lg font-bold text-slate-900 font-mono">{smsCount}</span>
-            </div>
-            <Smartphone className="w-4 h-4 text-blue-600" />
-          </div>
-
-          <div className="p-2.5 bg-white rounded-xl border border-slate-200 flex items-center justify-between">
-            <div>
-              <span className="text-slate-500 block text-[11px] font-medium">WhatsApp Cloud</span>
+              <span className="text-slate-500 block text-[11px] font-medium">WhatsApp (wa.me)</span>
               <span className="text-lg font-bold text-slate-900 font-mono">{waCount}</span>
             </div>
             <MessageSquare className="w-4 h-4 text-emerald-600" />
@@ -83,10 +74,18 @@ export const MessageLogsModal: React.FC<MessageLogsModalProps> = ({ logs, onClos
 
           <div className="p-2.5 bg-white rounded-xl border border-slate-200 flex items-center justify-between">
             <div>
-              <span className="text-slate-500 block text-[11px] font-medium">FCM Push</span>
+              <span className="text-slate-500 block text-[11px] font-medium">FCM / In-App</span>
               <span className="text-lg font-bold text-slate-900 font-mono">{fcmCount}</span>
             </div>
             <Bell className="w-4 h-4 text-amber-600" />
+          </div>
+
+          <div className="p-2.5 bg-white rounded-xl border border-slate-200 flex items-center justify-between">
+            <div>
+              <span className="text-slate-500 block text-[11px] font-medium">Total Dispatched</span>
+              <span className="text-lg font-bold text-slate-900 font-mono">{logs.length}</span>
+            </div>
+            <Smartphone className="w-4 h-4 text-blue-600" />
           </div>
         </div>
 

@@ -732,10 +732,10 @@ export const ParentAppRoot: React.FC = () => {
                           <span className="text-indigo-700 font-medium">Via {fee.paymentMethod}</span>
                         </>
                       )}
-                      {fee.paymentId && (
+                      {(fee.utrNumber || fee.manualPaymentUtr) && (
                         <>
                           <span aria-hidden="true">·</span>
-                          <span className="text-emerald-700 font-medium">Razorpay: {fee.paymentId}</span>
+                          <span className="text-emerald-700 font-medium font-mono">UTR: {fee.utrNumber || fee.manualPaymentUtr}</span>
                         </>
                       )}
                     </div>

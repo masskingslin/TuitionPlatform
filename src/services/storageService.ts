@@ -1,110 +1,61 @@
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { storage } from '../firebase';
-
-export interface UploadResult {
-  downloadUrl: string;
-  fileName: string;
-  fileSizeFormatted: string;
-  fileSizeBytes: number;
-  contentType: string;
-}
-
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB maximum
-
 /**
- * Format bytes into human-readable string
+ * Zero-Cost External Link & Document Helper Service
+ * Replaces paid Firebase Storage with free external HTTPS links (Google Drive, YouTube, Docs, etc.)
  */
-export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
+export interface LinkValidationResult {
+  valid: boolean;
+  error?: string;
 }
 
 /**
- * Validate that a file is a PDF or Image and does not exceed 10 MB
+ * Validates that a string is a secure HTTPS link (Google Drive, YouTube, Dropbox, etc.)
  */
-export function validateFile(file: File): { valid: boolean; error?: string } {
-  if (file.size > MAX_FILE_SIZE_BYTES) {
+export function validateHttpsUrl(urlString: string): LinkValidationResult {
+  if (!urlString || typeof urlString !== 'string') {
+    return { valid: false, error: 'Please enter a valid document or resource link.' };
+  }
+
+  const trimmed = urlString.trim();
+  if (!trimmed.startsWith('https://')) {
     return {
       valid: false,
-      error: `File size exceeds the 10 MB limit (${formatFileSize(file.size)}). Please choose a smaller file.`
+      error: 'Only secure HTTPS links are allowed (e.g. https://drive.google.com/..., https://youtube.com/...)'
     };
   }
-
-  const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-  const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|svg)$/i.test(file.name);
-
-  if (!isPdf && !isImage) {
-    return {
-      valid: false,
-      error: 'Invalid file format. Only PDF documents and Images are supported.'
-    };
-  }
-
-  return { valid: true };
-}
-
-/**
- * Upload a file to Firebase Storage (with Base64 dataURL fallback)
- */
-export async function uploadFileToStorage(
-  file: File,
-  folder: 'question_papers' | 'answer_sheets' | 'resources'
-): Promise<UploadResult> {
-  const validation = validateFile(file);
-  if (!validation.valid) {
-    throw new Error(validation.error || 'Invalid file.');
-  }
-
-  const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const storagePath = `${folder}/${Date.now()}_${cleanFileName}`;
 
   try {
-    // 1. Primary: Upload to Firebase Storage
-    const storageRef = ref(storage, storagePath);
-    const snapshot = await uploadBytes(storageRef, file, {
-      contentType: file.type || 'application/octet-stream'
-    });
-    const downloadUrl = await getDownloadURL(snapshot.ref);
-
-    return {
-      downloadUrl,
-      fileName: file.name,
-      fileSizeFormatted: formatFileSize(file.size),
-      fileSizeBytes: file.size,
-      contentType: file.type || (file.name.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg')
-    };
-  } catch (err) {
-    console.warn('Firebase Storage direct upload failed or blocked by CORS, falling back to client DataURL:', err);
-
-    // 2. Fallback: Base64 Data URL so the file can be previewed & downloaded in all environments
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(new Error('Failed to read file.'));
-      reader.readAsDataURL(file);
-    });
-
-    return {
-      downloadUrl: dataUrl,
-      fileName: file.name,
-      fileSizeFormatted: formatFileSize(file.size),
-      fileSizeBytes: file.size,
-      contentType: file.type || (file.name.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg')
-    };
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'https:') {
+      return { valid: false, error: 'Link protocol must be HTTPS.' };
+    }
+    return { valid: true };
+  } catch {
+    return { valid: false, error: 'Please enter a valid URL syntax.' };
   }
 }
 
 /**
- * Download a real file directly in browser
+ * Returns true if a given URL is a valid HTTPS link
  */
-export function downloadFile(url: string, fileName: string): void {
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  link.target = '_blank';
-  link.rel = 'noopener noreferrer';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+export function isValidHttpsUrl(urlString: string): boolean {
+  return validateHttpsUrl(urlString).valid;
+}
+
+/**
+ * Safely opens an external HTTPS document or media resource in a new tab
+ */
+export function openExternalLink(url: string): void {
+  if (!url) return;
+  const targetUrl = url.trim();
+  if (targetUrl.startsWith('https://')) {
+    window.open(targetUrl, '_blank', 'noopener,noreferrer');
+  }
+}
+
+/**
+ * Opens or downloads the link in browser
+ */
+export function downloadFile(url: string, _fileName?: string): void {
+  openExternalLink(url);
 }
