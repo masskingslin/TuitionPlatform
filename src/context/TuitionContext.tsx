@@ -63,7 +63,9 @@ import {
   updateDoc,
   deleteDoc,
   onSnapshot,
-  writeBatch
+  writeBatch,
+  query,
+  where
 } from 'firebase/firestore';
 
 interface TuitionContextType {
@@ -174,7 +176,8 @@ const initialBatches: CourseBatch[] = [
     syllabusProgress: 72,
     nextTopic: 'Quadratic Equations & Roots',
     gradeLevel: 'Grade 10',
-    textbookOrSyllabus: 'NCERT & State Board Mathematics'
+    textbookOrSyllabus: 'NCERT & State Board Mathematics',
+    studentIds: ['s1', 's2', 's3', 's4', 's5']
   },
   {
     id: 'b2',
@@ -188,7 +191,8 @@ const initialBatches: CourseBatch[] = [
     syllabusProgress: 64,
     nextTopic: 'Electromagnetic Induction',
     gradeLevel: 'Grade 10 & 11',
-    textbookOrSyllabus: 'Concepts of Physics & Practical Lab Manual'
+    textbookOrSyllabus: 'Concepts of Physics & Practical Lab Manual',
+    studentIds: ['s1', 's2', 's4']
   },
   {
     id: 'b3',
@@ -202,7 +206,8 @@ const initialBatches: CourseBatch[] = [
     syllabusProgress: 58,
     nextTopic: 'Acids, Bases and Salts',
     gradeLevel: 'Grade 10',
-    textbookOrSyllabus: 'Inorganic Chemistry & Reaction Mechanics'
+    textbookOrSyllabus: 'Inorganic Chemistry & Reaction Mechanics',
+    studentIds: ['s1', 's3', 's5']
   },
   {
     id: 'b4',
@@ -216,7 +221,8 @@ const initialBatches: CourseBatch[] = [
     syllabusProgress: 60,
     nextTopic: 'Cellular Respiration & Genetics',
     gradeLevel: 'Grade 10',
-    textbookOrSyllabus: 'NCERT Life Processes & Bio Practical Lab'
+    textbookOrSyllabus: 'NCERT Life Processes & Bio Practical Lab',
+    studentIds: ['s1', 's2', 's3']
   }
 ];
 
@@ -856,8 +862,6 @@ const initialSchoolInfo: SchoolInfo = {
   id: 'sch-1',
   name: 'Apex Academy of Excellence',
   isSchoolAdmin: true,
-  studentCode: 'S-8F29A1B',
-  teacherCode: 'T-3E49K2X',
   teacherCount: 4,
   studentCount: 60,
   parentCount: 42
@@ -993,6 +997,25 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         });
         await batch3.commit();
         console.log('Demo data successfully seeded to Firestore.');
+
+        // Generate school join codes server-side on creation and store in school_secrets
+        try {
+          const generated = await callRegenerateSchoolCodes('both');
+          if (generated?.studentCode && generated?.teacherCode) {
+            await setDoc(doc(db, 'school_secrets', 'sch-1'), {
+              studentCode: generated.studentCode,
+              teacherCode: generated.teacherCode,
+              updatedAt: new Date().toISOString()
+            });
+            setSchoolInfo((prev) => ({
+              ...prev,
+              studentCode: generated.studentCode,
+              teacherCode: generated.teacherCode
+            }));
+          }
+        } catch (codeErr) {
+          console.warn('Initial school codes generation note:', codeErr);
+        }
       }
     } catch (err) {
       console.warn('Initial demo seeding skipped or handled:', err);
@@ -1058,11 +1081,15 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => unsubscribeAuth();
   }, []);
 
-  // Set up Real-time Listeners across all Firestore collections
+  // Set up Real-time Listeners across scoped Firestore collections
   useEffect(() => {
     if (!currentUser) return;
 
     const unsubs: (() => void)[] = [];
+    const isTeacherOrAdmin = userProfile?.role === 'TEACHER' || userProfile?.role === 'ADMIN';
+    const isParent = userProfile?.role === 'PARENT';
+    const currentStudentId = userProfile?.studentId || currentUser.uid;
+    const targetStudentId = isParent ? activeChildId : currentStudentId;
 
     // 1. User doc listener
     const userDocRef = doc(db, 'users', currentUser.uid);
@@ -1095,10 +1122,13 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       )
     );
 
-    // 3. Attendance
+    // 3. Attendance - Scoped to student/child for students/parents; all for faculty
+    const attQuery = isTeacherOrAdmin
+      ? collection(db, 'attendance')
+      : query(collection(db, 'attendance'), where('studentId', '==', targetStudentId));
     unsubs.push(
       onSnapshot(
-        collection(db, 'attendance'),
+        attQuery,
         (snap) => {
           if (!snap.empty) {
             setAttendanceRecords(snap.docs.map((d) => ({ id: d.id, ...d.data() } as AttendanceRecord)));
@@ -1121,10 +1151,13 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       )
     );
 
-    // 5. Submissions
+    // 5. Submissions - Scoped to student/child for students/parents; all for faculty
+    const subQuery = isTeacherOrAdmin
+      ? collection(db, 'submissions')
+      : query(collection(db, 'submissions'), where('studentId', '==', targetStudentId));
     unsubs.push(
       onSnapshot(
-        collection(db, 'submissions'),
+        subQuery,
         (snap) => {
           if (!snap.empty) {
             setSubmissions(snap.docs.map((d) => ({ id: d.id, ...d.data() } as StudentSubmission)));
@@ -1134,10 +1167,13 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       )
     );
 
-    // 6. Fees
+    // 6. Fees - Scoped to student/child for students/parents; all for faculty
+    const feesQuery = isTeacherOrAdmin
+      ? collection(db, 'fees')
+      : query(collection(db, 'fees'), where('studentId', '==', targetStudentId));
     unsubs.push(
       onSnapshot(
-        collection(db, 'fees'),
+        feesQuery,
         (snap) => {
           if (!snap.empty) {
             setFeeRecords(snap.docs.map((d) => ({ invoiceId: d.id, ...d.data() } as FeeRecord)));
@@ -1160,10 +1196,13 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       )
     );
 
-    // 8. Doubts
+    // 8. Doubts - Scoped: students read only their own; teachers/admins all
+    const doubtsQuery = isTeacherOrAdmin
+      ? collection(db, 'doubts')
+      : query(collection(db, 'doubts'), where('studentId', '==', currentStudentId));
     unsubs.push(
       onSnapshot(
-        collection(db, 'doubts'),
+        doubtsQuery,
         (snap) => {
           if (!snap.empty) {
             setDoubts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as StudentDoubt)));
@@ -1225,10 +1264,13 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       )
     );
 
-    // 13. Test Results
+    // 13. Test Results - Scoped to student/child for students/parents; all for faculty
+    const testQuery = isTeacherOrAdmin
+      ? collection(db, 'test_results')
+      : query(collection(db, 'test_results'), where('studentId', '==', targetStudentId));
     unsubs.push(
       onSnapshot(
-        collection(db, 'test_results'),
+        testQuery,
         (snap) => {
           if (!snap.empty) {
             setTestResults(snap.docs.map((d) => ({ id: d.id, ...d.data() } as TestResult)));
@@ -1238,67 +1280,111 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       )
     );
 
-    // 14. School Info
+    // 14. School Info - Institutional public name and counts
     unsubs.push(
       onSnapshot(
         doc(db, 'school_info', 'sch-1'),
         (snap) => {
           if (snap.exists()) {
-            setSchoolInfo(snap.data() as SchoolInfo);
+            setSchoolInfo((prev) => ({
+              ...prev,
+              ...(snap.data() as Partial<SchoolInfo>)
+            }));
           }
         },
         (err) => handleFirestoreError(err, OperationType.GET, 'school_info/sch-1')
       )
     );
 
-    // 15. School Members
-    unsubs.push(
-      onSnapshot(
-        collection(db, 'school_members'),
-        (snap) => {
-          if (!snap.empty) {
-            setSchoolMembers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as SchoolMember)));
-          }
-        },
-        (err) => handleFirestoreError(err, OperationType.GET, 'school_members')
-      )
-    );
-
-    // 16. Parent Links
-    unsubs.push(
-      onSnapshot(
-        collection(db, 'parent_links'),
-        (snap) => {
-          if (!snap.empty) {
-            const firstActive = snap.docs.find((d) => !d.data().used);
-            if (firstActive) {
-              setParentLinkCode(firstActive.data() as ParentLinkCode);
+    // 14b. School Secrets - Join codes (studentCode, teacherCode) readable ONLY by faculty
+    if (isTeacherOrAdmin) {
+      unsubs.push(
+        onSnapshot(
+          doc(db, 'school_secrets', 'sch-1'),
+          (snap) => {
+            if (snap.exists()) {
+              const sec = snap.data();
+              setSchoolInfo((prev) => ({
+                ...prev,
+                studentCode: sec.studentCode,
+                teacherCode: sec.teacherCode
+              }));
             }
-          }
-        },
-        (err) => handleFirestoreError(err, OperationType.GET, 'parent_links')
-      )
-    );
+          },
+          (err) => console.warn('school_secrets listener warning:', err)
+        )
+      );
+    }
 
-    // 17. Notification & Message Logs
-    unsubs.push(
-      onSnapshot(
-        collection(db, 'notification_logs'),
-        (snap) => {
-          if (!snap.empty) {
-            const logs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as NotificationLog));
-            logs.sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
-            setNotificationLogs(logs);
-          }
-        },
-        (err) => console.warn('notification_logs listener warning:', err)
-      )
-    );
+    // 15. School Members - Teachers and admins read all; non-faculty do not list
+    if (isTeacherOrAdmin) {
+      unsubs.push(
+        onSnapshot(
+          collection(db, 'school_members'),
+          (snap) => {
+            if (!snap.empty) {
+              setSchoolMembers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as SchoolMember)));
+            }
+          },
+          (err) => handleFirestoreError(err, OperationType.GET, 'school_members')
+        )
+      );
+    }
+
+    // 16. Parent Links - Students read only their own codes; faculty all; parents do not list
+    if (isTeacherOrAdmin) {
+      unsubs.push(
+        onSnapshot(
+          collection(db, 'parent_links'),
+          (snap) => {
+            if (!snap.empty) {
+              const firstActive = snap.docs.find((d) => !d.data().used);
+              if (firstActive) {
+                setParentLinkCode(firstActive.data() as ParentLinkCode);
+              }
+            }
+          },
+          (err) => handleFirestoreError(err, OperationType.GET, 'parent_links')
+        )
+      );
+    } else if (userProfile?.role === 'STUDENT') {
+      unsubs.push(
+        onSnapshot(
+          query(collection(db, 'parent_links'), where('studentId', '==', currentStudentId)),
+          (snap) => {
+            if (!snap.empty) {
+              const firstActive = snap.docs.find((d) => !d.data().used);
+              if (firstActive) {
+                setParentLinkCode(firstActive.data() as ParentLinkCode);
+              }
+            }
+          },
+          (err) => handleFirestoreError(err, OperationType.GET, 'parent_links')
+        )
+      );
+    }
+
+    // 17. Notification & Message Logs - Faculty only
+    if (isTeacherOrAdmin) {
+      unsubs.push(
+        onSnapshot(
+          collection(db, 'notification_logs'),
+          (snap) => {
+            if (!snap.empty) {
+              const logs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as NotificationLog));
+              logs.sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
+              setNotificationLogs(logs);
+            }
+          },
+          (err) => console.warn('notification_logs listener warning:', err)
+        )
+      );
+    }
 
     return () => {
       unsubs.forEach((unsub) => unsub());
     };
-  }, [currentUser]);
+  }, [currentUser, userProfile?.role, activeChildId]);
 
   // Dynamic user profiles based on authenticated user
   const currentStudent: StudentProfile = {
@@ -2120,8 +2206,8 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const regenerateSchoolCodes = async (which: 'student' | 'teacher' | 'both' = 'both'): Promise<void> => {
     try {
       const result = await callRegenerateSchoolCodes(which, {
-        studentCode: schoolInfo.studentCode,
-        teacherCode: schoolInfo.teacherCode
+        studentCode: schoolInfo.studentCode || '',
+        teacherCode: schoolInfo.teacherCode || ''
       });
       if (result.success) {
         setSchoolInfo((prev) => ({
@@ -2129,6 +2215,19 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
           studentCode: result.studentCode,
           teacherCode: result.teacherCode
         }));
+        try {
+          await setDoc(
+            doc(db, 'school_secrets', 'sch-1'),
+            {
+              studentCode: result.studentCode,
+              teacherCode: result.teacherCode,
+              updatedAt: new Date().toISOString()
+            },
+            { merge: true }
+          );
+        } catch (dbErr) {
+          console.warn('Could not persist secrets to Firestore:', dbErr);
+        }
       }
     } catch (err) {
       console.error('Failed to regenerate school codes via cloud function:', err);

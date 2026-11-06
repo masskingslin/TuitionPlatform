@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChildProfile, CourseBatch, Assignment, AttendanceRecord } from '../../types';
+import { ChildProfile, CourseBatch, Assignment, AttendanceRecord, TestResult, FeeRecord } from '../../types';
 import {
   X,
   Printer,
@@ -8,7 +8,9 @@ import {
   Calendar,
   Building2,
   GraduationCap,
-  Download
+  Download,
+  CreditCard,
+  AlertTriangle
 } from 'lucide-react';
 
 interface ChildProgressReportModalProps {
@@ -20,6 +22,8 @@ interface ChildProgressReportModalProps {
   batches: CourseBatch[];
   assignments: Assignment[];
   attendanceRecords: AttendanceRecord[];
+  testResults?: TestResult[];
+  feeRecords?: FeeRecord[];
   onClose: () => void;
 }
 
@@ -32,17 +36,24 @@ export const ChildProgressReportModal: React.FC<ChildProgressReportModalProps> =
   batches,
   assignments,
   attendanceRecords,
+  testResults = [],
+  feeRecords = [],
   onClose
 }) => {
-  // Attendance calculations for this child
+  // 1. Scoped batch IDs for the child
+  const childBatchIds = new Set(batches.map((b) => b.id));
+
+  // 2. Attendance calculations for this child strictly scoped by studentId
   const childAttendance = attendanceRecords.filter((r) => r.studentId === child.id);
   const totalClasses = childAttendance.length > 0 ? childAttendance.length : 24;
   const presentCount = childAttendance.filter((r) => r.status === 'PRESENT').length || 20;
   const lateCount = childAttendance.filter((r) => r.status === 'LATE').length || 2;
   const attendancePct = Math.round(((presentCount + lateCount) / totalClasses) * 100);
 
-  // Homework & Assignments calculation
-  const childAssignments = assignments;
+  // 3. Homework & Assignments calculations strictly scoped by child's batches and submissions
+  const childAssignments = assignments.filter(
+    (a) => !a.batchId || childBatchIds.has(a.batchId)
+  );
   const totalAssignments = childAssignments.length;
   const submittedAssignments = childAssignments.filter((a) => a.isSubmitted);
   const gradedAssignments = childAssignments.filter((a) => a.isSubmitted && a.scoreEarned != null);
@@ -50,6 +61,22 @@ export const ChildProgressReportModal: React.FC<ChildProgressReportModalProps> =
   const totalPointsEarned = gradedAssignments.reduce((acc, curr) => acc + (curr.scoreEarned || 0), 0);
   const totalMaxPoints = gradedAssignments.reduce((acc, curr) => acc + curr.maxScore, 0);
   const averageScorePct = totalMaxPoints > 0 ? Math.round((totalPointsEarned / totalMaxPoints) * 100) : 89;
+
+  // 4. Test results strictly scoped by child.id and child's batches
+  const childTests = testResults.filter(
+    (t) => t.studentId === child.id && (!t.batchId || childBatchIds.has(t.batchId))
+  );
+  const testAveragePct = childTests.length > 0
+    ? Math.round(
+        (childTests.reduce((acc, t) => acc + (t.marksScored / t.maxMarks), 0) / childTests.length) * 100
+      )
+    : averageScorePct;
+
+  // 5. Fees strictly scoped by child.id
+  const childFees = feeRecords.filter((f) => f.studentId === child.id);
+  const totalFeeDue = childFees.reduce((acc, curr) => acc + curr.amountDue, 0);
+  const totalFeePaid = childFees.reduce((acc, curr) => acc + curr.amountPaid, 0);
+  const feeBalance = totalFeeDue - totalFeePaid;
 
   // Grade classification helper
   const getLetterGrade = (pct: number) => {
@@ -60,7 +87,7 @@ export const ChildProgressReportModal: React.FC<ChildProgressReportModalProps> =
     return { grade: 'C', label: 'Needs Improvement', color: 'text-rose-700 bg-rose-50 border-rose-300' };
   };
 
-  const overallGrade = getLetterGrade(averageScorePct);
+  const overallGrade = getLetterGrade(testAveragePct);
 
   // Subject-wise performance metrics
   const subjectList = batches.map((b) => {
@@ -108,6 +135,7 @@ export const ChildProgressReportModal: React.FC<ChildProgressReportModalProps> =
 ACADEMIC PROGRESS REPORT — ${schoolName.toUpperCase()}
 =====================================================
 Student Name: ${child.fullName}
+Student ID: ${child.id}
 Grade & Section: ${child.grade} · ${child.section}
 Guardian: ${parentName} (${parentEmail || parentPhone || 'Registered Parent'})
 Report Generated: ${currentDate}
@@ -115,8 +143,9 @@ Session: 2026-2027
 
 OVERALL EVALUATION:
 - Overall Attendance: ${attendancePct}% (${presentCount} of ${totalClasses} classes attended)
-- Homework Completion: ${submittedAssignments.length} of ${totalAssignments} submitted (100%)
-- Overall Academic Score: ${averageScorePct}% (Grade: ${overallGrade.grade} - ${overallGrade.label})
+- Homework Completion: ${submittedAssignments.length} of ${totalAssignments} submitted
+- Unit Test Average: ${testAveragePct}% (Grade: ${overallGrade.grade} - ${overallGrade.label})
+- Tuition Fee Status: ${feeBalance <= 0 ? 'Fully Paid / Settled' : `₹${feeBalance} Outstanding`}
 
 SUBJECT-WISE PERFORMANCE:
 ${subjectList.map((s, idx) => `
@@ -127,15 +156,24 @@ ${idx + 1}. ${s.subject.toUpperCase()} (${s.batchTitle})
    - Teacher Remarks: ${s.teacherRemarks}
 `).join('')}
 
-RECENT ASSIGNMENTS & TEST RESULTS:
+SCORED UNIT TESTS:
+${childTests.map((t, idx) => `
+${idx + 1}. ${t.testTitle} [${t.subject}]
+   - Date: ${t.date}
+   - Score: ${t.marksScored} / ${t.maxMarks} (${Math.round((t.marksScored / t.maxMarks) * 100)}%)
+   - Batch Highest: ${t.highestBatchMarks}/${t.maxMarks} | Percentile: ${t.percentile}%ile
+   - Faculty Notes: ${t.remarks || 'Standard evaluation.'}
+`).join('')}
+
+RECENT ASSIGNMENTS:
 ${childAssignments.map((a, idx) => `
 ${idx + 1}. ${a.title} [${a.subject || 'General'}]
    - Due Date: ${a.dueDate}
-   - Score: ${a.scoreEarned ?? 'Pending'} / ${a.maxScore} (${a.scoreEarned ? Math.round((a.scoreEarned / a.maxScore) * 100) + '%' : 'Pending'})
+   - Score: ${a.scoreEarned ?? 'Pending'} / ${a.maxScore}
    - Feedback: ${a.teacherFeedback || 'Good effort.'}
 `).join('')}
 =====================================================
-Certified by: Principal & Coaching Coordinator, ${schoolName}
+Certified by: Principal & Academic Board, ${schoolName}
 `;
     const blob = new Blob([textReport], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -246,7 +284,7 @@ Certified by: Principal & Coaching Coordinator, ${schoolName}
             <div>
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Student Name</span>
               <span className="text-sm font-bold text-slate-900 block mt-0.5">{child.fullName}</span>
-              <span className="text-[11px] text-slate-500">ID: {child.id.toUpperCase()}</span>
+              <span className="text-[11px] text-slate-500 font-mono">ID: {child.id.toUpperCase()}</span>
             </div>
 
             <div>
@@ -295,9 +333,9 @@ Certified by: Principal & Coaching Coordinator, ${schoolName}
                 <span className="text-2xl font-black text-blue-800 font-mono">
                   {submittedAssignments.length}/{totalAssignments}
                 </span>
-                <span className="text-xs text-blue-700 font-medium">(100% Submission)</span>
+                <span className="text-xs text-blue-700 font-medium">Tasks Submitted</span>
               </div>
-              <p className="text-[11px] text-blue-700">All assigned homework tasks submitted on schedule.</p>
+              <p className="text-[11px] text-blue-700">Coursework submitted to subject instructors on schedule.</p>
             </div>
 
             <div className="p-4 bg-indigo-50/50 rounded-xl border border-indigo-200 space-y-1">
@@ -305,8 +343,8 @@ Certified by: Principal & Coaching Coordinator, ${schoolName}
                 Cumulative Test Average
               </span>
               <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-black text-indigo-900 font-mono">{averageScorePct}%</span>
-                <span className="text-xs text-indigo-700 font-medium">({totalPointsEarned}/{totalMaxPoints} pts)</span>
+                <span className="text-2xl font-black text-indigo-900 font-mono">{testAveragePct}%</span>
+                <span className="text-xs text-indigo-700 font-medium">({childTests.length} tests taken)</span>
               </div>
               <p className="text-[11px] text-indigo-700">Calculated across all teacher-graded unit tests.</p>
             </div>
@@ -373,12 +411,61 @@ Certified by: Principal & Coaching Coordinator, ${schoolName}
             </div>
           </div>
 
+          {/* Scored Unit Tests Section if any */}
+          {childTests.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <GraduationCap className="w-4 h-4 text-purple-600" />
+                  <span>Periodic Unit Tests & Percentile Rankings</span>
+                </h3>
+                <span className="text-xs text-slate-500 font-medium">{childTests.length} Tests Logged</span>
+              </div>
+
+              <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                    <tr>
+                      <th className="py-2.5 px-3">Test Title</th>
+                      <th className="py-2.5 px-3">Subject</th>
+                      <th className="py-2.5 px-3 text-center">Date</th>
+                      <th className="py-2.5 px-3 text-center">Score / Max</th>
+                      <th className="py-2.5 px-3 text-center">Percentile</th>
+                      <th className="py-2.5 px-3">Faculty Note</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {childTests.map((test) => {
+                      const pct = Math.round((test.marksScored / test.maxMarks) * 100);
+                      return (
+                        <tr key={test.id} className="hover:bg-slate-50/80">
+                          <td className="py-2.5 px-3 font-semibold text-slate-900">{test.testTitle}</td>
+                          <td className="py-2.5 px-3 text-slate-700">{test.subject}</td>
+                          <td className="py-2.5 px-3 text-center font-mono text-slate-600">{test.date}</td>
+                          <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-900">
+                            {test.marksScored} / {test.maxMarks} ({pct}%)
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-mono font-bold text-[10px] border border-indigo-200">
+                              {test.percentile}%ile
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-500 italic text-[11px]">{test.remarks || '—'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* Recent Assignment Scores & Assessment Ledger */}
           <div className="space-y-3">
             <div className="flex items-center justify-between border-b border-slate-200 pb-2">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-indigo-600" />
-                <span>Recent Assignment & Unit Test Ledger</span>
+                <span>Recent Assignment & Homework Ledger</span>
               </h3>
               <span className="text-xs text-slate-500 font-medium">{childAssignments.length} Assignments</span>
             </div>
@@ -444,6 +531,30 @@ Certified by: Principal & Coaching Coordinator, ${schoolName}
               </table>
             </div>
           </div>
+
+          {/* Fee Clearance Summary if fees exist */}
+          {childFees.length > 0 && (
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-slate-600" />
+                <span className="font-semibold text-slate-800">Tuition Fee Ledger:</span>
+                <span className="text-slate-600">
+                  Paid ₹{totalFeePaid.toLocaleString()} of ₹{totalFeeDue.toLocaleString()}
+                </span>
+              </div>
+              <div>
+                {feeBalance <= 0 ? (
+                  <span className="inline-flex items-center gap-1 font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> All Invoices Settled
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                    <AlertTriangle className="w-3.5 h-3.5" /> ₹{feeBalance.toLocaleString()} Outstanding Balance
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Conduct & Learning Habits Checklist */}
           <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">

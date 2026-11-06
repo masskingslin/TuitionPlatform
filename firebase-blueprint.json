@@ -255,6 +255,17 @@
       },
       "required": ["id", "name"]
     },
+    "SchoolSecrets": {
+      "title": "SchoolSecrets",
+      "description": "Sensitive school join codes accessible only by teachers and admins",
+      "type": "object",
+      "properties": {
+        "studentCode": { "type": "string" },
+        "teacherCode": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["studentCode", "teacherCode"]
+    },
     "SchoolMember": {
       "title": "SchoolMember",
       "description": "Roster member of the institution",
@@ -304,7 +315,7 @@
         "content": { "type": "string" },
         "provider": { "type": "string" },
         "providerMessageId": { "type": "string" },
-        "status": { "type": "string", "enum": ["DELIVERED", "SENT", "FAILED", "SIMULATED"] },
+        "status": { "type": "string", "enum": ["DELIVERED", "SENT", "FAILED"] },
         "sentAt": { "type": "string" }
       },
       "required": ["id", "channel", "messageType", "content", "sentAt"]
@@ -366,6 +377,10 @@
     "/school_info/{schoolId}": {
       "schema": "SchoolInfo",
       "description": "School settings and configuration"
+    },
+    "/school_secrets/{schoolId}": {
+      "schema": "SchoolSecrets",
+      "description": "Protected school join codes readable only by faculty"
     },
     "/school_members/{memberId}": {
       "schema": "SchoolMember",

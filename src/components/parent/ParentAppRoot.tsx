@@ -997,6 +997,8 @@ export const ParentAppRoot: React.FC = () => {
           batches={batches}
           assignments={childAssignments}
           attendanceRecords={childAttendance}
+          testResults={childTests}
+          feeRecords={childFees}
           onClose={() => setShowProgressReport(false)}
         />
       )}

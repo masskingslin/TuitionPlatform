@@ -67,6 +67,7 @@ export interface CourseBatch {
   nextTopic: string;
   gradeLevel?: string;
   textbookOrSyllabus?: string;
+  studentIds?: string[];
 }
 
 export interface AttendanceRecord {
@@ -278,9 +279,9 @@ export interface ChildProfile {
 export interface SchoolInfo {
   id: string;
   name: string;
-  isSchoolAdmin: boolean;
-  studentCode: string;
-  teacherCode: string;
+  isSchoolAdmin?: boolean;
+  studentCode?: string;
+  teacherCode?: string;
   teacherCount: number;
   studentCount: number;
   parentCount: number;
@@ -302,7 +303,7 @@ export interface SchoolMember {
 
 export type MessageChannel = 'SMS' | 'WHATSAPP' | 'FCM_PUSH';
 export type MessageType = 'ATTENDANCE_ALERT' | 'FEE_REMINDER' | 'HOMEWORK' | 'ANNOUNCEMENT';
-export type MessageDeliveryStatus = 'DELIVERED' | 'SENT' | 'FAILED' | 'SIMULATED';
+export type MessageDeliveryStatus = 'DELIVERED' | 'SENT' | 'FAILED';
 
 export interface NotificationLog {
   id: string;

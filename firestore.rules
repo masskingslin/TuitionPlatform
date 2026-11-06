@@ -50,8 +50,29 @@ service cloud.firestore {
       );
     }
 
+    function isStudentInBatch(batchId) {
+      return isSignedIn() && (
+        isTeacherOrAdmin() || (
+          hasUserDoc() && (
+            (getUserRole() == 'STUDENT' && (
+              ('enrolledBatchIds' in getUserData() && batchId in getUserData().enrolledBatchIds) ||
+              ('studentIds' in resource.data && (
+                request.auth.uid in resource.data.studentIds ||
+                ('studentId' in getUserData() && getUserData().studentId in resource.data.studentIds)
+              ))
+            )) ||
+            (getUserRole() == 'PARENT' && (
+              ('enrolledBatchIds' in getUserData() && batchId in getUserData().enrolledBatchIds) ||
+              ('studentIds' in resource.data && 'linkedChildIds' in getUserData() && resource.data.studentIds.hasAny(getUserData().linkedChildIds))
+            ))
+          )
+        )
+      );
+    }
+
     // 1. Users collection
     // Users CANNOT set or change their own role or isSchoolAdmin.
+    // New users can only sign up as STUDENT unless verified by admin/Cloud Function.
     match /users/{userId} {
       allow get: if isSignedIn() && (request.auth.uid == userId || isTeacherOrAdmin());
       allow list: if isTeacherOrAdmin();
@@ -72,9 +93,24 @@ service cloud.firestore {
       allow delete: if isTeacherOrAdmin();
     }
 
-    // 2. Batches collection
+    // 2. Batches collection - Scoped to enrolled students, linked parents, or faculty
     match /batches/{batchId} {
-      allow read: if isSignedIn();
+      allow get: if isStudentInBatch(batchId);
+      allow list: if isTeacherOrAdmin() || (
+        isSignedIn() && hasUserDoc() && (
+          (getUserRole() == 'STUDENT' && (
+            ('enrolledBatchIds' in getUserData() && resource.id in getUserData().enrolledBatchIds) ||
+            ('studentIds' in resource.data && (
+              request.auth.uid in resource.data.studentIds ||
+              ('studentId' in getUserData() && getUserData().studentId in resource.data.studentIds)
+            ))
+          )) ||
+          (getUserRole() == 'PARENT' && (
+            ('enrolledBatchIds' in getUserData() && resource.id in getUserData().enrolledBatchIds) ||
+            ('studentIds' in resource.data && 'linkedChildIds' in getUserData() && resource.data.studentIds.hasAny(getUserData().linkedChildIds))
+          ))
+        )
+      );
       allow create, update, delete: if isTeacherOrAdmin();
     }
 
@@ -83,15 +119,29 @@ service cloud.firestore {
       allow get: if isSignedIn() && canAccessStudentData(resource.data.studentId);
       allow list: if isSignedIn() && (
         isTeacherOrAdmin() ||
-        (hasUserDoc() && getUserRole() == 'STUDENT' && resource.data.studentId == request.auth.uid) ||
+        (hasUserDoc() && getUserRole() == 'STUDENT' && (resource.data.studentId == request.auth.uid || ('studentId' in getUserData() && resource.data.studentId == getUserData().studentId))) ||
         (hasUserDoc() && getUserRole() == 'PARENT' && isLinkedParentOf(resource.data.studentId))
       );
       allow create, update, delete: if isTeacherOrAdmin();
     }
 
-    // 4. Assignments collection
+    // 4. Assignments collection - Scoped to enrolled batch
     match /assignments/{assignmentId} {
-      allow read: if isSignedIn();
+      allow get, list: if isTeacherOrAdmin() || (
+        isSignedIn() && hasUserDoc() && (
+          (getUserRole() == 'STUDENT' && (
+            ('enrolledBatchIds' in getUserData() && resource.data.batchId in getUserData().enrolledBatchIds) ||
+            ('studentIds' in resource.data && (
+              request.auth.uid in resource.data.studentIds ||
+              ('studentId' in getUserData() && getUserData().studentId in resource.data.studentIds)
+            ))
+          )) ||
+          (getUserRole() == 'PARENT' && (
+            ('enrolledBatchIds' in getUserData() && resource.data.batchId in getUserData().enrolledBatchIds) ||
+            ('studentIds' in resource.data && 'linkedChildIds' in getUserData() && resource.data.studentIds.hasAny(getUserData().linkedChildIds))
+          ))
+        )
+      );
       allow create, update, delete: if isTeacherOrAdmin();
     }
 
@@ -100,16 +150,18 @@ service cloud.firestore {
       allow get: if isSignedIn() && canAccessStudentData(resource.data.studentId);
       allow list: if isSignedIn() && (
         isTeacherOrAdmin() ||
-        (hasUserDoc() && getUserRole() == 'STUDENT' && resource.data.studentId == request.auth.uid) ||
+        (hasUserDoc() && getUserRole() == 'STUDENT' && (resource.data.studentId == request.auth.uid || ('studentId' in getUserData() && resource.data.studentId == getUserData().studentId))) ||
         (hasUserDoc() && getUserRole() == 'PARENT' && isLinkedParentOf(resource.data.studentId))
       );
       allow create: if isSignedIn() && (
         isTeacherOrAdmin() ||
-        (request.resource.data.studentId == request.auth.uid)
+        (request.resource.data.studentId == request.auth.uid) ||
+        (hasUserDoc() && 'studentId' in getUserData() && request.resource.data.studentId == getUserData().studentId)
       );
       allow update: if isSignedIn() && (
         isTeacherOrAdmin() ||
-        (resource.data.studentId == request.auth.uid && request.resource.data.studentId == request.auth.uid)
+        (resource.data.studentId == request.auth.uid && request.resource.data.studentId == request.auth.uid) ||
+        (hasUserDoc() && 'studentId' in getUserData() && resource.data.studentId == getUserData().studentId && request.resource.data.studentId == getUserData().studentId)
       );
       allow delete: if isTeacherOrAdmin();
     }
@@ -119,7 +171,7 @@ service cloud.firestore {
       allow get: if isSignedIn() && canAccessStudentData(resource.data.studentId);
       allow list: if isSignedIn() && (
         isTeacherOrAdmin() ||
-        (hasUserDoc() && getUserRole() == 'STUDENT' && resource.data.studentId == request.auth.uid) ||
+        (hasUserDoc() && getUserRole() == 'STUDENT' && (resource.data.studentId == request.auth.uid || ('studentId' in getUserData() && resource.data.studentId == getUserData().studentId))) ||
         (hasUserDoc() && getUserRole() == 'PARENT' && isLinkedParentOf(resource.data.studentId))
       );
       allow create, delete: if isTeacherOrAdmin();
@@ -132,30 +184,53 @@ service cloud.firestore {
       );
     }
 
-    // 7. Announcements collection
+    // 7. Announcements collection - Scoped to enrolled batch or public ALL
     match /announcements/{announcementId} {
-      allow read: if isSignedIn();
+      allow get, list: if isTeacherOrAdmin() || (
+        isSignedIn() && (
+          !('batchId' in resource.data) ||
+          resource.data.batchId == 'ALL' ||
+          (hasUserDoc() && (
+            (getUserRole() == 'STUDENT' && 'enrolledBatchIds' in getUserData() && resource.data.batchId in getUserData().enrolledBatchIds) ||
+            (getUserRole() == 'PARENT' && 'enrolledBatchIds' in getUserData() && resource.data.batchId in getUserData().enrolledBatchIds)
+          ))
+        )
+      );
       allow create, update, delete: if isTeacherOrAdmin();
     }
 
-    // 8. Doubts collection - Students write ONLY their own
+    // 8. Doubts collection - Students read and write ONLY their own; faculty all
     match /doubts/{doubtId} {
-      allow read, list: if isSignedIn();
+      allow get, list: if isTeacherOrAdmin() || (
+        isSignedIn() && (
+          resource.data.studentId == request.auth.uid ||
+          (hasUserDoc() && 'studentId' in getUserData() && resource.data.studentId == getUserData().studentId)
+        )
+      );
       allow create: if isSignedIn() && (
         isTeacherOrAdmin() ||
-        (request.resource.data.studentId == request.auth.uid)
+        request.resource.data.studentId == request.auth.uid ||
+        (hasUserDoc() && 'studentId' in getUserData() && request.resource.data.studentId == getUserData().studentId)
       );
-      allow update: if isTeacherOrAdmin() || (
-        isSignedIn() && resource.data.studentId == request.auth.uid && request.resource.data.studentId == request.auth.uid
-      );
-      allow delete: if isTeacherOrAdmin() || (
-        isSignedIn() && resource.data.studentId == request.auth.uid
+      allow update, delete: if isTeacherOrAdmin() || (
+        isSignedIn() && (
+          resource.data.studentId == request.auth.uid ||
+          (hasUserDoc() && 'studentId' in getUserData() && resource.data.studentId == getUserData().studentId)
+        )
       );
     }
 
-    // 9. Educational Resources
+    // 9. Educational Resources - Scoped to enrolled batch or public ALL
     match /resources/{resourceId} {
-      allow read: if isSignedIn();
+      allow get, list: if isTeacherOrAdmin() || (
+        isSignedIn() && (
+          resource.data.batchId == 'ALL' ||
+          (hasUserDoc() && (
+            (getUserRole() == 'STUDENT' && 'enrolledBatchIds' in getUserData() && resource.data.batchId in getUserData().enrolledBatchIds) ||
+            (getUserRole() == 'PARENT' && 'enrolledBatchIds' in getUserData() && resource.data.batchId in getUserData().enrolledBatchIds)
+          ))
+        )
+      );
       allow create, update, delete: if isTeacherOrAdmin();
     }
 
@@ -170,50 +245,91 @@ service cloud.firestore {
       allow create, update, delete: if isTeacherOrAdmin();
     }
 
-    // 11. Classroom Rooms
+    // 11. Classroom Rooms - Scoped to enrolled batches or faculty
     match /rooms/{roomId} {
-      allow read: if isSignedIn();
+      allow get, list: if isTeacherOrAdmin() || (
+        isSignedIn() && hasUserDoc() && (
+          !('batchIds' in resource.data) ||
+          (getUserRole() == 'STUDENT' && 'enrolledBatchIds' in getUserData() && resource.data.batchIds.hasAny(getUserData().enrolledBatchIds)) ||
+          (getUserRole() == 'PARENT' && 'enrolledBatchIds' in getUserData() && resource.data.batchIds.hasAny(getUserData().enrolledBatchIds))
+        )
+      );
       allow create, update, delete: if isTeacherOrAdmin();
     }
 
-    // 12. Schedule slots
+    // 12. Schedule slots - Scoped to enrolled batch
     match /schedule_slots/{slotId} {
-      allow read: if isSignedIn();
+      allow get, list: if isTeacherOrAdmin() || (
+        isSignedIn() && hasUserDoc() && (
+          (getUserRole() == 'STUDENT' && 'enrolledBatchIds' in getUserData() && resource.data.batchId in getUserData().enrolledBatchIds) ||
+          (getUserRole() == 'PARENT' && 'enrolledBatchIds' in getUserData() && resource.data.batchId in getUserData().enrolledBatchIds)
+        )
+      );
       allow create, update, delete: if isTeacherOrAdmin();
     }
 
-    // 13. Parent links
+    // 13. Parent links - Only creator student and faculty can read; parents redeem via Cloud Function
     match /parent_links/{codeId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && (isTeacherOrAdmin() || request.resource.data.studentId == request.auth.uid);
-      allow update: if isSignedIn() && (isTeacherOrAdmin() || resource.data.studentId == request.auth.uid);
+      allow get, list: if isTeacherOrAdmin() || (
+        isSignedIn() && (
+          resource.data.studentId == request.auth.uid ||
+          (hasUserDoc() && 'studentId' in getUserData() && resource.data.studentId == getUserData().studentId)
+        )
+      );
+      allow create: if isSignedIn() && (
+        isTeacherOrAdmin() ||
+        request.resource.data.studentId == request.auth.uid ||
+        (hasUserDoc() && 'studentId' in getUserData() && request.resource.data.studentId == getUserData().studentId)
+      );
+      allow update: if isTeacherOrAdmin() || (
+        isSignedIn() && (
+          resource.data.studentId == request.auth.uid ||
+          (hasUserDoc() && 'studentId' in getUserData() && resource.data.studentId == getUserData().studentId)
+        )
+      );
       allow delete: if isTeacherOrAdmin();
     }
 
-    // 14. School Info
+    // 14. School Info - Institutional public profile (name, counts). Contains NO secret join codes.
     match /school_info/{schoolId} {
       allow read: if isSignedIn();
       allow create, update, delete: if isTeacherOrAdmin();
     }
 
-    // 15. School Members
+    // 14b. School Secrets - Sensitive join codes (studentCode, teacherCode)
+    // Accessible and readable ONLY to teachers and admins!
+    match /school_secrets/{schoolId} {
+      allow read, write: if isTeacherOrAdmin();
+    }
+
+    // 15. School Members - Teachers and admins read all; members read only their own record
     match /school_members/{memberId} {
-      allow read: if isSignedIn();
+      allow get: if isTeacherOrAdmin() || (
+        isSignedIn() && (
+          memberId == request.auth.uid ||
+          (hasUserDoc() && (
+            ('studentId' in getUserData() && memberId == getUserData().studentId) ||
+            ('teacherId' in getUserData() && memberId == getUserData().teacherId) ||
+            ('parentId' in getUserData() && memberId == getUserData().parentId)
+          ))
+        )
+      );
+      allow list: if isTeacherOrAdmin();
       allow create, update, delete: if isTeacherOrAdmin();
     }
 
-    // 16. Test Results
+    // 16. Test Results - Scoped to student, linked parents, or faculty
     match /test_results/{testId} {
       allow get: if isSignedIn() && canAccessStudentData(resource.data.studentId);
       allow list: if isSignedIn() && (
         isTeacherOrAdmin() ||
-        (hasUserDoc() && getUserRole() == 'STUDENT' && resource.data.studentId == request.auth.uid) ||
+        (hasUserDoc() && getUserRole() == 'STUDENT' && (resource.data.studentId == request.auth.uid || ('studentId' in getUserData() && resource.data.studentId == getUserData().studentId))) ||
         (hasUserDoc() && getUserRole() == 'PARENT' && isLinkedParentOf(resource.data.studentId))
       );
       allow create, update, delete: if isTeacherOrAdmin();
     }
 
-    // 17. Notification & Message Logs
+    // 17. Notification & Message Logs - Faculty only
     match /notification_logs/{logId} {
       allow read, list: if isTeacherOrAdmin();
       allow create, update, delete: if isTeacherOrAdmin();

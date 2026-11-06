@@ -64,7 +64,8 @@ export const SchoolManagementScreen: React.FC = () => {
   const [newMemberRole, setNewMemberRole] = useState<UserRole>('STUDENT');
   const [newMemberIsAdmin, setNewMemberIsAdmin] = useState(false);
 
-  const handleCopyCode = (code: string, type: 'student' | 'teacher') => {
+  const handleCopyCode = (code: string | undefined, type: 'student' | 'teacher') => {
+    if (!code) return;
     navigator.clipboard?.writeText(code);
     if (type === 'student') {
       setCopiedStudent(true);

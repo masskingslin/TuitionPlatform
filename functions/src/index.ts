@@ -170,14 +170,14 @@ export const regenerateSchoolCodes = onCall(async (request) => {
     return result;
   };
 
-  const schoolRef = db.collection('school_info').doc(schoolId);
-  const schoolDoc = await schoolRef.get();
-  const currentData = schoolDoc.exists ? schoolDoc.data() : null;
+  const secretsRef = db.collection('school_secrets').doc(schoolId);
+  const secretsDoc = await secretsRef.get();
+  const currentData = secretsDoc.exists ? secretsDoc.data() : null;
 
   const newStudentCode = which === 'teacher' ? (currentData?.studentCode || `S-${generateHex()}`) : `S-${generateHex()}`;
   const newTeacherCode = which === 'student' ? (currentData?.teacherCode || `T-${generateHex()}`) : `T-${generateHex()}`;
 
-  await schoolRef.set(
+  await secretsRef.set(
     {
       studentCode: newStudentCode,
       teacherCode: newTeacherCode,
