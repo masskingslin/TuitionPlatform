@@ -1440,7 +1440,14 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       await signInWithEmailAndPassword(auth, email, pass);
       return { success: true };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Login failed.';
+      const code = (err as any)?.code || '';
+      const rawMsg = err instanceof Error ? err.message : 'Login failed.';
+      let msg = rawMsg;
+      if (code === 'auth/operation-not-allowed' || rawMsg.includes('operation-not-allowed')) {
+        msg = 'Firebase Email/Password Sign-In is disabled in your Firebase Console. Please go to Firebase Console > Authentication > Sign-in method and enable Email/Password.';
+      } else if (code === 'auth/invalid-credential' || code === 'auth/user-not-found' || code === 'auth/wrong-password') {
+        msg = 'Invalid email or password. Please verify your credentials or sign up.';
+      }
       return { success: false, error: msg };
     }
   };
@@ -1529,7 +1536,14 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       return { success: true };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Sign up failed.';
+      const code = (err as any)?.code || '';
+      const rawMsg = err instanceof Error ? err.message : 'Sign up failed.';
+      let msg = rawMsg;
+      if (code === 'auth/operation-not-allowed' || rawMsg.includes('operation-not-allowed')) {
+        msg = 'Firebase Email/Password Sign-In is disabled in your Firebase Console. Please go to Firebase Console > Authentication > Sign-in method and enable Email/Password.';
+      } else if (code === 'auth/email-already-in-use') {
+        msg = 'This email address is already registered. Please sign in instead.';
+      }
       return { success: false, error: msg };
     }
   };
@@ -1606,8 +1620,17 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const cred = demoCredentials[targetRole];
     try {
       await signInWithEmailAndPassword(auth, cred.email, cred.pass);
-    } catch {
-      // If user does not exist yet, create them with demo data
+    } catch (signInErr: any) {
+      const signInCode = signInErr?.code || '';
+      const signInMsg = signInErr?.message || '';
+
+      if (signInCode === 'auth/operation-not-allowed' || signInMsg.includes('operation-not-allowed')) {
+        throw new Error(
+          'Firebase Email/Password Sign-In is disabled in your Firebase Console. Please enable Email/Password under Firebase Console > Authentication > Sign-in method.'
+        );
+      }
+
+      // If user does not exist yet, attempt to create them with demo data
       try {
         const userCred = await createUserWithEmailAndPassword(auth, cred.email, cred.pass);
         const profile: UserProfile = {
@@ -1625,7 +1648,16 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         await setDoc(doc(db, 'users', userCred.user.uid), profile);
         setUserProfile(profile);
         setRoleState(targetRole);
-      } catch (createErr) {
+      } catch (createErr: any) {
+        const createCode = createErr?.code || '';
+        const createMsg = createErr?.message || '';
+
+        if (createCode === 'auth/operation-not-allowed' || createMsg.includes('operation-not-allowed')) {
+          throw new Error(
+            'Firebase Email/Password Sign-In is disabled in your Firebase Console. Please enable Email/Password under Firebase Console > Authentication > Sign-in method.'
+          );
+        }
+
         console.error('Failed to auto-create demo user:', createErr);
         throw createErr;
       }
@@ -1994,7 +2026,10 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
 
     const targetFee = feeRecords.find((f) => f.invoiceId === invoiceId);
-    const amount = targetFee ? targetFee.amountDue : 1500;
+    if (!targetFee) {
+      throw new Error(`Invoice #${invoiceId} not found.`);
+    }
+    const amount = targetFee.amountDue;
 
     setFeeRecords((prev) =>
       prev.map((f) =>
@@ -2038,6 +2073,9 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
 
     const targetFee = feeRecords.find((f) => f.invoiceId === invoiceId);
+    if (!targetFee) {
+      throw new Error(`Invoice #${invoiceId} not found.`);
+    }
     const cleanUtr = utr.trim();
 
     setFeeRecords((prev) =>
@@ -2094,8 +2132,11 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
 
     const targetFee = feeRecords.find((f) => f.invoiceId === invoiceId);
-    const amount = targetFee ? targetFee.amountDue : 1500;
-    const utr = targetFee?.utrNumber || targetFee?.manualPaymentUtr || 'Verified';
+    if (!targetFee) {
+      throw new Error(`Invoice #${invoiceId} not found.`);
+    }
+    const amount = targetFee.amountDue;
+    const utr = targetFee.utrNumber || targetFee.manualPaymentUtr || 'Verified';
     const finalMethod = `UPI Transfer (Approved · UTR: ${utr})`;
     const approverName = currentTeacher?.name || userProfile?.fullName || 'Faculty Admin';
 

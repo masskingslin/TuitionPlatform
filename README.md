@@ -7,12 +7,33 @@ TuitionPlatform operates on a **100% Zero-Cost Serverless & Self-Hosted Stack**:
 - **Zero-Cost Payments**: **Direct UPI & Bharat QR** (`upi://pay?pa=<vpa>&pn=&am=&tn=`). Students submit their 12-digit UTR; fees transition to `PENDING_APPROVAL` until verified and marked `PAID` by faculty. Eliminates all Razorpay gateway fees and transaction cuts.
 - **Zero-Cost File Storage**: Eliminates Firebase Storage. Resource, homework, and answer-sheet forms accept validated HTTPS links (Google Drive, YouTube, Docs, Dropbox) with direct preview and opening.
 - **Zero-Cost Messaging**: Eliminates SMS/WhatsApp API charges (MSG91, WhatsApp Cloud API). Absence and fee reminders create in-app notifications and self-hosted FCM pushes, plus official 1-click WhatsApp (`wa.me`) direct chat links.
-- **Backend API & Administration**: Self-hosted **Node.js/Express (`server.ts`)** utilizing `firebase-admin` to verify tokens, generate single-use 24h join codes, and rate-limit verification attempts.
+- **Backend API & Administration**: Self-hosted **Node.js/Express (`server.ts`)** utilizing `firebase-admin` to verify tokens, generate single-use 24h join codes, rate-limit verification attempts, and enforce role assignments.
+- **Backend Hardening**: Security headers (`helmet`), global & file-backed persistent rate-limiting (`rateLimitData.json`), Zod request body validation, error stack-trace masking, and `/health` uptime monitoring.
 - **Zero-Port Tunneling**: **Cloudflare Tunnel (`cloudflared`)** exposes the local backend to the internet with global HTTPS, DDoS protection, and zero router port forwarding or static IP requirements.
 
 ---
 
-## Zero-Cost Backend Deployment Guide
+## 1. First-Run Admin Bootstrap Flow
+
+When launching a new institution instance:
+1. Start the backend server (`server.ts`).
+2. Make a POST request to `/api/bootstrapFirstAdmin` with your configured `ADMIN_BOOTSTRAP_SECRET`:
+   ```bash
+   curl -X POST https://<YOUR_BACKEND_URL>/api/bootstrapFirstAdmin \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <ADMIN_FIREBASE_ID_TOKEN>" \
+     -d '{
+       "secret": "your_super_secret_admin_bootstrap_key",
+       "fullName": "System Administrator",
+       "schoolName": "Apex Academy of Excellence",
+       "upiVpa": "apex@upi"
+     }'
+   ```
+3. The server assigns the caller `ADMIN` role with `isSchoolAdmin: true`, saves the school name and UPI VPA to `school_info/sch-1`, generates initial student and teacher join codes into `school_secrets/sch-1`, and **automatically disables the `/api/bootstrapFirstAdmin` endpoint permanently**.
+
+---
+
+## 2. Zero-Cost Backend Deployment Guide
 
 You can run the backend completely free on any machine:
 1. **Ubuntu / Debian VPS** (e.g. Oracle Cloud Free Tier, Raspberry Pi, home server).
@@ -20,12 +41,13 @@ You can run the backend completely free on any machine:
 
 ---
 
-### Method A: Ubuntu / Debian / VPS Setup
+### Method A: Ubuntu / Debian / VPS Setup with PM2
 
-#### 1. Install Node.js 20+ and Git
+#### 1. Install Node.js 22, Git & PM2
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt-get install -y nodejs git
+sudo npm install -g pm2
 ```
 
 #### 2. Clone Repository & Install Dependencies
@@ -33,6 +55,7 @@ sudo apt-get install -y nodejs git
 git clone <YOUR_REPOSITORY_URL> /opt/tuition-server
 cd /opt/tuition-server
 npm install
+npm run build
 ```
 
 #### 3. Download Firebase Service Account Key
@@ -62,51 +85,41 @@ FIREBASE_SERVICE_ACCOUNT_PATH=/opt/tuition-server/serviceAccountKey.json
 ADMIN_BOOTSTRAP_SECRET=your_super_secret_admin_bootstrap_key
 ```
 
-#### 5. Install & Configure Cloudflare Tunnel
+#### 5. Install & Configure Cloudflare Named Tunnel
 Cloudflare Tunnel allows you to securely expose port 3000 to the public internet with a free SSL certificate.
 
-1. Download and install `cloudflared`:
+1. Install `cloudflared`:
    ```bash
    curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
    sudo dpkg -i cloudflared.deb
    ```
-2. Start a tunnel:
-   - **Quick Tunnel (instant random URL)**:
-     ```bash
-     cloudflared tunnel --url http://localhost:3000
-     ```
-     This outputs a public URL like: `https://xxxx.trycloudflare.com`.
-   - **Custom Domain Tunnel (recommended for permanent setup)**:
-     ```bash
-     cloudflared tunnel login
-     cloudflared tunnel create tuition-backend
-     cloudflared tunnel route dns tuition-backend api.yourdomain.com
-     cloudflared tunnel run tuition-backend
-     ```
+2. Authenticate and create a named tunnel:
+   ```bash
+   cloudflared tunnel login
+   cloudflared tunnel create tuition-backend
+   cloudflared tunnel route dns tuition-backend api.yourdomain.com
+   ```
+3. Run the named tunnel as a background service:
+   ```bash
+   cloudflared tunnel run tuition-backend &
+   ```
 
-#### 6. Run Continuously with Systemd
-Create a systemd service file `/etc/systemd/system/tuition-backend.service`:
-```ini
-[Unit]
-Description=TuitionPlatform Self-Hosted Zero-Cost Backend
-After=network.target
-
-[Service]
-Type=simple
-User=ubuntu
-WorkingDirectory=/opt/tuition-server
-ExecStart=/usr/bin/node /opt/tuition-server/server.ts
-Restart=always
-RestartSec=5
-EnvironmentFile=/opt/tuition-server/.env
-
-[Install]
-WantedBy=multi-user.target
-```
-Enable and start the service:
+#### 6. Manage Backend Process with PM2 (Auto-Restart on Crash & Reboot)
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now tuition-backend
+pm2 start server.ts --name tuition-backend -- interpreter node_modules/.bin/tsx
+pm2 startup
+pm2 save
+```
+PM2 will automatically monitor the server process and restart it on crashes or server reboot!
+
+#### 7. Schedule Nightly Firestore Local Backups
+Set up a cron job to export local state and Firestore collections daily at 2:00 AM:
+```bash
+crontab -e
+```
+Add entry:
+```cron
+0 2 * * * /bin/bash /opt/tuition-server/scripts/backup-firestore.sh >> /var/log/tuition-backup.log 2>&1
 ```
 
 ---
@@ -121,11 +134,14 @@ Turn any spare Android smartphone into a 24/7 tuition server:
    ```bash
    pkg update && pkg upgrade -y
    pkg install nodejs-lts git wget -y
+   npm install -g pm2
    ```
-3. Prevent Android battery optimization from sleeping the server:
-   ```bash
-   termux-wake-lock
-   ```
+3. **Battery Optimization & Wake-Lock**:
+   - Prevent Android from sleeping the CPU:
+     ```bash
+     termux-wake-lock
+     ```
+   - Go to Android Settings > **Apps** > **Termux** > **Battery** and select **Unrestricted / Don't optimize battery usage**.
 
 #### 2. Setup Application
 ```bash
@@ -135,7 +151,7 @@ npm install
 ```
 
 #### 3. Copy Firebase Service Account Key
-Copy your `serviceAccountKey.json` into `~/tuition-platform/serviceAccountKey.json` using Termux storage access (`termux-setup-storage`) or `scp`/`curl`.
+Copy your `serviceAccountKey.json` into `~/tuition-platform/serviceAccountKey.json`.
 
 #### 4. Configure `.env`
 ```bash
@@ -151,24 +167,22 @@ EOF
 #### 5. Install & Run Cloudflare Tunnel on Termux
 ```bash
 pkg install cloudflared -y
-```
-Run the tunnel in a background session or tmux:
-```bash
 cloudflared tunnel --url http://localhost:3000
 ```
 Note the generated `https://xxxx.trycloudflare.com` URL.
 
-#### 6. Start the Backend
+#### 6. Start Server with PM2
 ```bash
-node server.ts
+pm2 start server.ts --name tuition-backend -- interpreter node_modules/.bin/tsx
+pm2 save
 ```
 
 ---
 
-## Client Integration (`VITE_API_BASE_URL`)
+## 3. Client Integration (`VITE_API_BASE_URL`)
 
 When hosting the frontend on Firebase Hosting and running the backend via Cloudflare Tunnel:
-1. Set `VITE_API_BASE_URL` in your frontend environment:
+1. Set `VITE_API_BASE_URL` in your build environment or `.env`:
    ```ini
    VITE_API_BASE_URL=https://api.yourdomain.com
    # or the TryCloudflare URL:
@@ -183,10 +197,10 @@ Every client API request will automatically attach the user's Firebase ID token 
 
 ---
 
-## Security Model
+## 4. Security Model & Resilience
 
 1. **Authentication Token Verification**: Every endpoint strictly validates the client's Firebase Auth ID token using `admin.auth().verifyIdToken()`.
 2. **Strict Firestore Rules**: Clients can self-create accounts *only* as `STUDENT`. Role upgrades to `TEACHER` or `PARENT` are performed exclusively by the server via `firebase-admin`.
 3. **Single-Use 24h Join Codes**: Codes are generated using cryptographically secure random bytes, expire in 24 hours, and are invalidated immediately upon redemption.
-4. **Rate Limiting**: Erroneous code submissions are automatically rate-limited per user/IP (maximum 5 failed attempts per 15-minute window).
-5. **No Orphaned Accounts**: If teacher or parent join code verification fails during signup, users are provided an in-place retry flow and an account cleanup button to prevent orphaned database records.
+4. **Persistent Rate Limiting**: Erroneous code submissions are rate-limited per user/IP (maximum 5 failed attempts per 15-minute window), persisted in `rateLimitData.json` so lockouts survive server restarts.
+5. **Offline Resilience & Health Banner**: When the backend server is unreachable, `BackendHealthBanner` notifies users that code generation is paused while active Firestore offline cache allows continued read access to classes and progress.

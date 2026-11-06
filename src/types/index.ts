@@ -320,7 +320,7 @@ export interface NotificationLog {
   studentName?: string;
   title?: string;
   content: string;
-  provider: 'MSG91' | 'WHATSAPP_CLOUD' | 'WHATSAPP_WEB' | 'FCM' | 'IN_APP_DISPATCHER' | 'SYSTEM_DISPATCHER';
+  provider: 'WHATSAPP_WEB' | 'FCM' | 'IN_APP_DISPATCHER' | 'SYSTEM_DISPATCHER';
   providerMessageId?: string;
   status: MessageDeliveryStatus;
   sentAt: string;

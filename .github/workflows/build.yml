@@ -1,4 +1,4 @@
-name: Build and Deploy to Firebase Hosting (Spark)
+name: Build, Test, and Deploy to Firebase (Spark Zero-Cost)
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [ main, master ]
 
 jobs:
-  build_and_deploy:
+  build_test_deploy:
     runs-on: ubuntu-latest
 
     steps:
@@ -23,12 +23,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run Code Validation & Tests
+        run: |
+          npm run lint
+          npm test
+
       - name: Build Web Application
         run: npm run build
+        env:
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
 
-      - name: Deploy to Firebase Hosting
+      - name: Deploy Firestore Security Rules & Indexes
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        run: |
+          npx firebase-tools deploy --only firestore:rules,firestore:indexes --project "${{ secrets.FIREBASE_PROJECT_ID }}" --token "${{ secrets.FIREBASE_TOKEN }}" || true
+
+      - name: Deploy to Firebase Hosting (Spark)
         uses: FirebaseExtended/action-hosting-deploy@v0
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         with:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
           firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'

@@ -3,6 +3,7 @@ import { TuitionProvider, useTuition } from './context/TuitionContext';
 import { School, Loader2, LogOut } from 'lucide-react';
 import { OfflineIndicator } from './components/common/OfflineIndicator';
 import { PWAInstallButton } from './components/common/PWAInstallButton';
+import { BackendHealthBanner } from './components/common/BackendHealthBanner';
 
 const StudentAppRoot = lazy(() =>
   import('./components/student/StudentAppRoot').then((m) => ({ default: m.StudentAppRoot }))
@@ -39,6 +40,7 @@ const TuitionAppContainer: React.FC = () => {
   if (!currentUser) {
     return (
       <Suspense fallback={<ScreenLoadingFallback />}>
+        <BackendHealthBanner />
         <AuthScreen />
         <OfflineIndicator />
       </Suspense>
@@ -47,6 +49,7 @@ const TuitionAppContainer: React.FC = () => {
 
   return (
     <div className="relative min-h-screen">
+      <BackendHealthBanner />
       {/* Current Logged-in User Status & PWA Install floating bar */}
       <div className="fixed bottom-20 sm:bottom-4 right-4 z-50 flex items-center gap-2 bg-slate-900/90 text-white backdrop-blur-md px-3.5 py-2 rounded-full shadow-xl border border-slate-700/80 text-xs">
         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>

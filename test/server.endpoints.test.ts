@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import http from 'http';
-import { app, resetRateLimit } from '../server';
+import { app, resetRateLimit, resetBootstrapStateForTest } from '../server';
 
 let server: http.Server;
 let baseUrl = '';
@@ -32,8 +32,18 @@ describe('Zero-Cost Backend Endpoints Suite (server.ts)', () => {
   const parentToken = 'Bearer test_token_parent_77:parent77@apex.edu:PARENT:Parent User';
   const adminToken = 'Bearer test_token_admin_00:admin00@apex.edu:ADMIN:Administrator';
 
+  // 0. Health Check Endpoint
+  test('0. GET /health returns 200 OK and uptime metadata', async () => {
+    const res = await fetch(`${baseUrl}/health`);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.status).toBe('ok');
+    expect(json.service).toBe('tuition-platform-backend');
+    expect(typeof json.uptime).toBe('number');
+  });
+
   // 1. Authentication Middleware Enforcement
-  test('1. Every endpoint rejects requests with missing or invalid Authorization header', async () => {
+  test('1. Every protected endpoint rejects requests with missing or invalid Authorization header', async () => {
     const endpoints = [
       '/api/createParentLinkCode',
       '/api/linkChildWithCode',
@@ -222,8 +232,9 @@ describe('Zero-Cost Backend Endpoints Suite (server.ts)', () => {
     expect(validJson.role).toBe('TEACHER');
   });
 
-  // 6. bootstrapFirstAdmin & promoteMember
-  test('6. bootstrapFirstAdmin and promoteMember manage administrator privileges safely', async () => {
+  // 6. bootstrapFirstAdmin & auto-disable flow
+  test('6. bootstrapFirstAdmin initializes admin and automatically disables endpoint', async () => {
+    resetBootstrapStateForTest();
     const applicantToken = 'Bearer test_token_applicant_admin:app_admin@apex.edu:STUDENT:App Admin';
 
     // Bootstrap with valid secret
@@ -235,14 +246,37 @@ describe('Zero-Cost Backend Endpoints Suite (server.ts)', () => {
       },
       body: JSON.stringify({
         secret: 'test_bootstrap_secret_123',
-        fullName: 'First System Admin'
+        fullName: 'First System Admin',
+        schoolName: 'Apex Academy',
+        upiVpa: 'apex@upi'
       })
     });
     expect(bootstrapRes.status).toBe(200);
     const bootstrapJson = await bootstrapRes.json();
     expect(bootstrapJson.success).toBe(true);
+    expect(bootstrapJson.studentCode).toMatch(/^S-[A-Z0-9]{6}$/);
+    expect(bootstrapJson.teacherCode).toMatch(/^T-[A-Z0-9]{6}$/);
 
-    // promoteMember by Admin
+    // Subsequent bootstrap call MUST fail with 403 Forbidden
+    const secondBootstrapRes = await fetch(`${baseUrl}/api/bootstrapFirstAdmin`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: applicantToken
+      },
+      body: JSON.stringify({
+        secret: 'test_bootstrap_secret_123',
+        fullName: 'Second System Admin'
+      })
+    });
+    expect(secondBootstrapRes.status).toBe(403);
+    const secondJson = await secondBootstrapRes.json();
+    expect(secondJson.success).toBe(false);
+    expect(secondJson.error).toContain('permanently disabled');
+  });
+
+  // 7. promoteMember
+  test('7. promoteMember allows administrators to promote members', async () => {
     const promoteRes = await fetch(`${baseUrl}/api/promoteMember`, {
       method: 'POST',
       headers: {
@@ -260,8 +294,8 @@ describe('Zero-Cost Backend Endpoints Suite (server.ts)', () => {
     expect(promoteJson.success).toBe(true);
   });
 
-  // 7. sendParentMessage (zero-cost in-app notification & push dispatcher)
-  test('7. sendParentMessage accepts in-app / push notification dispatch without paid gateways', async () => {
+  // 8. sendParentMessage (zero-cost in-app notification & push dispatcher)
+  test('8. sendParentMessage accepts in-app / push notification dispatch without paid gateways', async () => {
     const res = await fetch(`${baseUrl}/api/sendParentMessage`, {
       method: 'POST',
       headers: {
@@ -284,4 +318,3 @@ describe('Zero-Cost Backend Endpoints Suite (server.ts)', () => {
     expect(json.channel).toBe('IN_APP');
   });
 });
-
