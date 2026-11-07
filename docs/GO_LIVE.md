@@ -4,6 +4,15 @@ Use this checklist to verify end-to-end functionality of the Tuition Platform be
 
 ---
 
+## 0. Process Management & Ecosystem Setup
+- [ ] **Start Server with PM2**:
+  - Verify `.env` contains `ADMIN_BOOTSTRAP_SECRET`, `FIREBASE_SERVICE_ACCOUNT_PATH`, and `ALLOWED_ORIGIN`.
+  - Start process using ecosystem file: `pm2 start ecosystem.config.cjs`
+  - Persist process list across reboots: `pm2 save && pm2 startup`
+  - Check health endpoint: `curl http://localhost:3000/health` (returns `{"status":"ok",...}`).
+
+---
+
 ## 1. Initial Setup & Admin Bootstrap
 - [ ] **First-Run Bootstrap**:
   - Send POST request to `/api/bootstrapFirstAdmin` with `{ "secret": "<YOUR_ADMIN_SECRET>", "schoolName": "Apex Academy", "upiVpa": "apex@upi" }`.

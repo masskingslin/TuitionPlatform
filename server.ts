@@ -63,7 +63,10 @@ if (!adminApp) {
   const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
   const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
 
-  if (serviceAccountPath && fs.existsSync(serviceAccountPath)) {
+  if (process.env.FIRESTORE_EMULATOR_HOST || process.env.FIREBASE_AUTH_EMULATOR_HOST || process.env.NODE_ENV === 'test') {
+    adminApp = initializeApp({ projectId });
+    console.log('Firebase Admin initialized for Emulator/Test environment with projectId:', projectId);
+  } else if (serviceAccountPath && fs.existsSync(serviceAccountPath)) {
     try {
       const sa = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
       adminApp = initializeApp({
@@ -1142,6 +1145,19 @@ async function startServer() {
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   if (isProduction) {
+    const missing: string[] = [];
+    if (!process.env.ADMIN_BOOTSTRAP_SECRET) missing.push('ADMIN_BOOTSTRAP_SECRET');
+    if (!process.env.FIREBASE_SERVICE_ACCOUNT_PATH && !process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
+      missing.push('FIREBASE_SERVICE_ACCOUNT_PATH (or FIREBASE_SERVICE_ACCOUNT_KEY)');
+    }
+    if (!process.env.ALLOWED_ORIGIN) missing.push('ALLOWED_ORIGIN');
+
+    if (missing.length > 0) {
+      console.error(`[FATAL] Missing required production environment variables: ${missing.join(', ')}`);
+      console.error('The server cannot start in production mode without these environment variables configured.');
+      process.exit(1);
+    }
+
     const distPath = path.resolve(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {

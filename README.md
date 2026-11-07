@@ -16,7 +16,12 @@ TuitionPlatform operates on a **100% Zero-Cost Serverless & Self-Hosted Stack**:
 ## 1. First-Run Admin Bootstrap Flow
 
 When launching a new institution instance:
-1. Start the backend server (`server.ts`).
+1. Start the backend server using PM2:
+   ```bash
+   pm2 start ecosystem.config.cjs
+   pm2 save
+   pm2 startup
+   ```
 2. Make a POST request to `/api/bootstrapFirstAdmin` with your configured `ADMIN_BOOTSTRAP_SECRET`:
    ```bash
    curl -X POST https://<YOUR_BACKEND_URL>/api/bootstrapFirstAdmin \
@@ -70,13 +75,13 @@ npm run build
    *(Important: NEVER commit `serviceAccountKey.json` to Git).*
 
 #### 4. Configure Environment Variables
-Copy the template and edit your configuration:
+Copy `.env.example` to `.env` and fill in required variables:
 ```bash
 cp .env.example .env
 nano .env
 ```
 
-Ensure the following variables are configured:
+Ensure the following variables are configured in `.env`:
 ```ini
 PORT=3000
 NODE_ENV=production
@@ -84,6 +89,8 @@ ALLOWED_ORIGIN=https://<your-firebase-app>.web.app,https://<your-firebase-app>.f
 FIREBASE_SERVICE_ACCOUNT_PATH=/opt/tuition-server/serviceAccountKey.json
 ADMIN_BOOTSTRAP_SECRET=your_super_secret_admin_bootstrap_key
 ```
+
+*(Note: In production, the server will intentionally fail to start if `ADMIN_BOOTSTRAP_SECRET`, `FIREBASE_SERVICE_ACCOUNT_PATH`, or `ALLOWED_ORIGIN` is missing).*
 
 #### 5. Install & Configure Cloudflare Named Tunnel
 Cloudflare Tunnel allows you to securely expose port 3000 to the public internet with a free SSL certificate.
@@ -104,13 +111,14 @@ Cloudflare Tunnel allows you to securely expose port 3000 to the public internet
    cloudflared tunnel run tuition-backend &
    ```
 
-#### 6. Manage Backend Process with PM2 (Auto-Restart on Crash & Reboot)
+#### 6. Start Backend Process with PM2 Ecosystem Config
+Start the server using `ecosystem.config.cjs` (configured with `script: "server.ts"`, `interpreter: "node_modules/.bin/tsx"`, and `env: { NODE_ENV: "production" }`):
 ```bash
-pm2 start server.ts --name tuition-backend -- interpreter node_modules/.bin/tsx
-pm2 startup
+pm2 start ecosystem.config.cjs
 pm2 save
+pm2 startup
 ```
-PM2 will automatically monitor the server process and restart it on crashes or server reboot!
+PM2 will monitor the process and automatically restart it on system reboot or unexpected crash!
 
 #### 7. Schedule Nightly Firestore Local Backups
 Set up a cron job to export local state and Firestore collections daily at 2:00 AM:
@@ -171,10 +179,11 @@ cloudflared tunnel --url http://localhost:3000
 ```
 Note the generated `https://xxxx.trycloudflare.com` URL.
 
-#### 6. Start Server with PM2
+#### 6. Start Server with PM2 Ecosystem Config
 ```bash
-pm2 start server.ts --name tuition-backend -- interpreter node_modules/.bin/tsx
+pm2 start ecosystem.config.cjs
 pm2 save
+pm2 startup
 ```
 
 ---
@@ -202,5 +211,5 @@ Every client API request will automatically attach the user's Firebase ID token 
 1. **Authentication Token Verification**: Every endpoint strictly validates the client's Firebase Auth ID token using `admin.auth().verifyIdToken()`.
 2. **Strict Firestore Rules**: Clients can self-create accounts *only* as `STUDENT`. Role upgrades to `TEACHER` or `PARENT` are performed exclusively by the server via `firebase-admin`.
 3. **Single-Use 24h Join Codes**: Codes are generated using cryptographically secure random bytes, expire in 24 hours, and are invalidated immediately upon redemption.
-4. **Persistent Rate Limiting**: Erroneous code submissions are rate-limited per user/IP (maximum 5 failed attempts per 15-minute window), persisted in `rateLimitData.json` so lockouts survive server restarts.
+4. **Persistent Rate Limiting**: Erroneous code submissions are rate-limited per user/IP (maximum 5 failed attempts per 15-minute window), persisted in `rateLimitData.json` (gitignored) so lockouts survive server restarts.
 5. **Offline Resilience & Health Banner**: When the backend server is unreachable, `BackendHealthBanner` notifies users that code generation is paused while active Firestore offline cache allows continued read access to classes and progress.
