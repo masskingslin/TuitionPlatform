@@ -21,7 +21,8 @@ import {
   MapPin,
   Calendar,
   X,
-  ShieldCheck
+  ShieldCheck,
+  Download
 } from 'lucide-react';
 
 export const SchoolManagementScreen: React.FC = () => {
@@ -34,10 +35,11 @@ export const SchoolManagementScreen: React.FC = () => {
     deleteSchoolMember,
     addSchoolMember,
     batches,
-    feeRecords
+    feeRecords,
+    attendanceRecords
   } = useTuition();
 
-  const [activeTab, setActiveTab] = useState<'MEMBERS' | 'SETTINGS' | 'CODES'>('MEMBERS');
+  const [activeTab, setActiveTab] = useState<'MEMBERS' | 'SETTINGS' | 'CODES' | 'EXPORTS'>('MEMBERS');
   const [copiedStudent, setCopiedStudent] = useState(false);
   const [copiedTeacher, setCopiedTeacher] = useState(false);
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>('ALL');
@@ -50,6 +52,8 @@ export const SchoolManagementScreen: React.FC = () => {
   const [phoneInput, setPhoneInput] = useState(schoolInfo.phone || '+91 98765 00000');
   const [addressInput, setAddressInput] = useState(schoolInfo.address || '42 Academic Boulevard, Chennai');
   const [academicYearInput, setAcademicYearInput] = useState(schoolInfo.academicYear || '2026–2027');
+  const [upiVpaInput, setUpiVpaInput] = useState(schoolInfo.upiVpa || 'apex@upi');
+  const [upiPayeeNameInput, setUpiPayeeNameInput] = useState(schoolInfo.upiPayeeName || 'Apex Academy of Excellence');
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   // Member editing modal
@@ -85,13 +89,75 @@ export const SchoolManagementScreen: React.FC = () => {
         email: emailInput.trim(),
         phone: phoneInput.trim(),
         address: addressInput.trim(),
-        academicYear: academicYearInput.trim()
+        academicYear: academicYearInput.trim(),
+        upiVpa: upiVpaInput.trim(),
+        upiPayeeName: upiPayeeNameInput.trim()
       });
       setActionNotice('Institute settings updated and saved to Firestore!');
       setTimeout(() => setActionNotice(null), 4000);
     } finally {
       setIsSavingSettings(false);
     }
+  };
+
+  const downloadBlob = (content: string, filename: string) => {
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportStudentsCSV = () => {
+    const headers = ['ID', 'Full Name', 'Email', 'Role', 'Joined At'];
+    const rows = schoolMembers
+      .filter((m) => m.role === 'STUDENT')
+      .map((m) => [m.id, `"${m.fullName.replace(/"/g, '""')}"`, m.email, m.role, m.joinedAt]);
+
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    downloadBlob(csvContent, 'students_roster_export.csv');
+    setActionNotice('Downloaded students_roster_export.csv');
+    setTimeout(() => setActionNotice(null), 3500);
+  };
+
+  const exportAttendanceCSV = () => {
+    const headers = ['Record ID', 'Student ID', 'Student Name', 'Batch ID', 'Date', 'Status'];
+    const rows = attendanceRecords.map((a) => [
+      a.id,
+      a.studentId,
+      `"${(a.studentName || '').replace(/"/g, '""')}"`,
+      a.batchId,
+      a.date,
+      a.status
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    downloadBlob(csvContent, 'attendance_ledger_export.csv');
+    setActionNotice('Downloaded attendance_ledger_export.csv');
+    setTimeout(() => setActionNotice(null), 3500);
+  };
+
+  const exportFeeLedgerCSV = () => {
+    const headers = ['Invoice ID', 'Student ID', 'Student Name', 'Amount Due', 'Amount Paid', 'Status', 'Payment Method', 'UTR Number'];
+    const rows = feeRecords.map((f) => [
+      f.invoiceId,
+      f.studentId,
+      `"${(f.studentName || '').replace(/"/g, '""')}"`,
+      f.amountDue,
+      f.amountPaid || 0,
+      f.status,
+      f.paymentMethod || 'UPI',
+      f.manualPaymentUtr || ''
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    downloadBlob(csvContent, 'fee_ledger_export.csv');
+    setActionNotice('Downloaded fee_ledger_export.csv');
+    setTimeout(() => setActionNotice(null), 3500);
   };
 
   const handleRegenerate = (which: 'student' | 'teacher' | 'both') => {
@@ -275,6 +341,17 @@ export const SchoolManagementScreen: React.FC = () => {
         >
           <GraduationCap className="w-3.5 h-3.5" />
           <span>Enrollment Join Codes</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('EXPORTS')}
+          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
+            activeTab === 'EXPORTS' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Download className="w-3.5 h-3.5" />
+          <span>Data Backups & CSV</span>
         </button>
       </div>
 
@@ -467,7 +544,7 @@ export const SchoolManagementScreen: React.FC = () => {
                   placeholder="e.g. 2026–2027"
                   value={academicYearInput}
                   onChange={(e) => setAcademicYearInput(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg p-2 focus:outline-hidden focus:ring-2 focus:ring-teal-600"
+                  className="w-full border border-slate-300 rounded-lg p-2 focus:outline-hidden focus:ring-2 focus:ring-teal-600 font-mono text-xs"
                 />
               </div>
 
@@ -481,7 +558,37 @@ export const SchoolManagementScreen: React.FC = () => {
                   placeholder="e.g. 42 Academic Boulevard"
                   value={addressInput}
                   onChange={(e) => setAddressInput(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg p-2 focus:outline-hidden focus:ring-2 focus:ring-teal-600"
+                  className="w-full border border-slate-300 rounded-lg p-2 focus:outline-hidden focus:ring-2 focus:ring-teal-600 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+                  <Building className="w-3.5 h-3.5 text-teal-700" />
+                  <span>UPI VPA / Payment Handle</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. apex@upi"
+                  value={upiVpaInput}
+                  onChange={(e) => setUpiVpaInput(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg p-2 font-mono text-xs focus:outline-hidden focus:ring-2 focus:ring-teal-600"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+                  <UserCheck className="w-3.5 h-3.5 text-slate-500" />
+                  <span>UPI Payee Display Name</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Apex Academy of Excellence"
+                  value={upiPayeeNameInput}
+                  onChange={(e) => setUpiPayeeNameInput(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:outline-hidden focus:ring-2 focus:ring-teal-600"
                 />
               </div>
             </div>
@@ -580,6 +687,65 @@ export const SchoolManagementScreen: React.FC = () => {
               >
                 <RefreshCw className="w-3 h-3" />
                 <span>Rotate Teacher Code</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= TAB 4: DATA BACKUPS & EXPORTS ================= */}
+      {activeTab === 'EXPORTS' && (
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-2xs space-y-4">
+          <div>
+            <h3 className="text-base font-bold text-slate-900 tracking-tight">Zero-Cost Data Export & Ledger Backups</h3>
+            <p className="text-xs text-slate-500">
+              Generate and download offline CSV records directly in your browser with zero external dependencies or API fees.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2 flex flex-col justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-slate-900">Student Roster CSV</h4>
+                <p className="text-[11px] text-slate-500">Export student names, emails, roles, and join dates.</p>
+              </div>
+              <button
+                type="button"
+                onClick={exportStudentsCSV}
+                className="w-full py-2.5 px-3 bg-[#00695C] hover:bg-[#005a4e] text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer min-h-[44px]"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export Students CSV</span>
+              </button>
+            </div>
+
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2 flex flex-col justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-slate-900">Attendance Ledger CSV</h4>
+                <p className="text-[11px] text-slate-500">Export attendance status records across all batches.</p>
+              </div>
+              <button
+                type="button"
+                onClick={exportAttendanceCSV}
+                className="w-full py-2.5 px-3 bg-[#00695C] hover:bg-[#005a4e] text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer min-h-[44px]"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export Attendance CSV</span>
+              </button>
+            </div>
+
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2 flex flex-col justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-slate-900">Fee Ledger CSV</h4>
+                <p className="text-[11px] text-slate-500">Export fee invoices, UPI UTR numbers, and payment status.</p>
+              </div>
+              <button
+                type="button"
+                onClick={exportFeeLedgerCSV}
+                className="w-full py-2.5 px-3 bg-[#00695C] hover:bg-[#005a4e] text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer min-h-[44px]"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export Fee Ledger CSV</span>
               </button>
             </div>
           </div>

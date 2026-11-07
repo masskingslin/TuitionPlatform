@@ -4,6 +4,7 @@ import { School, Loader2, LogOut } from 'lucide-react';
 import { OfflineIndicator } from './components/common/OfflineIndicator';
 import { PWAInstallButton } from './components/common/PWAInstallButton';
 import { BackendHealthBanner } from './components/common/BackendHealthBanner';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 const StudentAppRoot = lazy(() =>
   import('./components/student/StudentAppRoot').then((m) => ({ default: m.StudentAppRoot }))
@@ -62,7 +63,7 @@ const TuitionAppContainer: React.FC = () => {
         <PWAInstallButton />
         <button
           onClick={logout}
-          className="ml-0.5 p-1 hover:bg-rose-500/20 hover:text-rose-300 rounded-full transition-colors text-slate-400 cursor-pointer"
+          className="ml-0.5 p-1 hover:bg-rose-500/20 hover:text-rose-300 rounded-full transition-colors text-slate-400 cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
           title="Sign Out"
           aria-label="Sign Out"
         >
@@ -84,9 +85,11 @@ const TuitionAppContainer: React.FC = () => {
 
 export function App() {
   return (
-    <TuitionProvider>
-      <TuitionAppContainer />
-    </TuitionProvider>
+    <ErrorBoundary>
+      <TuitionProvider>
+        <TuitionAppContainer />
+      </TuitionProvider>
+    </ErrorBoundary>
   );
 }
 

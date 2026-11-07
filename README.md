@@ -13,200 +13,126 @@ TuitionPlatform operates on a **100% Zero-Cost Serverless & Self-Hosted Stack**:
 
 ---
 
-## 1. First-Run Admin Bootstrap Flow
+## ⚡ Deploy in 30 Minutes Guide
 
-When launching a new institution instance:
-1. Start the backend server using PM2:
-   ```bash
-   pm2 start ecosystem.config.cjs
-   pm2 save
-   pm2 startup
-   ```
-2. Make a POST request to `/api/bootstrapFirstAdmin` with your configured `ADMIN_BOOTSTRAP_SECRET`:
-   ```bash
-   curl -X POST https://<YOUR_BACKEND_URL>/api/bootstrapFirstAdmin \
-     -H "Content-Type: application/json" \
-     -H "Authorization: Bearer <ADMIN_FIREBASE_ID_TOKEN>" \
-     -d '{
-       "secret": "your_super_secret_admin_bootstrap_key",
-       "fullName": "System Administrator",
-       "schoolName": "Apex Academy of Excellence",
-       "upiVpa": "apex@upi"
-     }'
-   ```
-3. The server assigns the caller `ADMIN` role with `isSchoolAdmin: true`, saves the school name and UPI VPA to `school_info/sch-1`, generates initial student and teacher join codes into `school_secrets/sch-1`, and **automatically disables the `/api/bootstrapFirstAdmin` endpoint permanently**.
+Follow this step-by-step checklist to deploy your tuition center platform in under 30 minutes at 100% zero cost:
 
----
+### Step 1: Firebase Project Setup (5 mins)
+1. Go to [Firebase Console](https://console.firebase.google.com/) and click **Add Project**.
+2. Enable **Authentication** > **Sign-in method** > **Email/Password** provider.
+3. Enable **Cloud Firestore** in production mode.
+4. Go to **Project Settings** > **Service Accounts** > click **Generate new private key** to download `serviceAccountKey.json`.
 
-## 2. Zero-Cost Backend Deployment Guide
+### Step 2: Configure GitHub Secrets (5 mins)
+In your repository under **Settings** > **Secrets and variables** > **Actions**, add:
+- `FIREBASE_PROJECT_ID`: Your Firebase Project ID (e.g. `my-tuition-app`).
+- `FIREBASE_TOKEN`: Generated via `npx firebase login:ci`.
+- `FIREBASE_SERVICE_ACCOUNT`: Contents of your downloaded `serviceAccountKey.json`.
+- `VITE_API_BASE_URL`: Your backend Cloudflare Tunnel URL (e.g. `https://api.tuitioncenter.com`).
 
-You can run the backend completely free on any machine:
-1. **Ubuntu / Debian VPS** (e.g. Oracle Cloud Free Tier, Raspberry Pi, home server).
-2. **Android Phone via Termux** (runs directly on an old phone using ~80MB RAM).
-
----
-
-### Method A: Ubuntu / Debian / VPS Setup with PM2
-
-#### 1. Install Node.js 22, Git & PM2
+### Step 3: Self-Host Backend with PM2 & Tunnel (10 mins)
+On your Ubuntu server or spare Android phone (Termux):
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt-get install -y nodejs git
-sudo npm install -g pm2
-```
-
-#### 2. Clone Repository & Install Dependencies
-```bash
-git clone <YOUR_REPOSITORY_URL> /opt/tuition-server
+# 1. Clone & install
+git clone <YOUR_REPO_URL> /opt/tuition-server
 cd /opt/tuition-server
 npm install
 npm run build
-```
 
-#### 3. Download Firebase Service Account Key
-1. Go to the [Firebase Console](https://console.firebase.google.com/).
-2. Navigate to **Project Settings** > **Service Accounts**.
-3. Click **Generate new private key** and download the `.json` file.
-4. Place the file securely on your server (e.g., `/opt/tuition-server/serviceAccountKey.json`).
-5. Restrict permissions:
-   ```bash
-   chmod 600 /opt/tuition-server/serviceAccountKey.json
-   ```
-   *(Important: NEVER commit `serviceAccountKey.json` to Git).*
-
-#### 4. Configure Environment Variables
-Copy `.env.example` to `.env` and fill in required variables:
-```bash
+# 2. Add service account key & environment variables
+cp serviceAccountKey.json /opt/tuition-server/serviceAccountKey.json
 cp .env.example .env
-nano .env
+nano .env  # set ALLOWED_ORIGIN, ADMIN_BOOTSTRAP_SECRET, FIREBASE_SERVICE_ACCOUNT_PATH
+
+# 3. Start background tunnel
+cloudflared tunnel run tuition-backend &
+
+# 4. Start PM2 ecosystem server
+pm2 start ecosystem.config.cjs
+pm2 save
+pm2 startup
 ```
 
-Ensure the following variables are configured in `.env`:
-```ini
-PORT=3000
-NODE_ENV=production
-ALLOWED_ORIGIN=https://<your-firebase-app>.web.app,https://<your-firebase-app>.firebaseapp.com
-FIREBASE_SERVICE_ACCOUNT_PATH=/opt/tuition-server/serviceAccountKey.json
-ADMIN_BOOTSTRAP_SECRET=your_super_secret_admin_bootstrap_key
+### Step 4: First-Run Admin Bootstrap (5 mins)
+Initialize your first system administrator account:
+```bash
+curl -X POST https://<YOUR_BACKEND_URL>/api/bootstrapFirstAdmin \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <ADMIN_FIREBASE_ID_TOKEN>" \
+  -d '{
+    "secret": "<YOUR_ADMIN_BOOTSTRAP_SECRET>",
+    "fullName": "System Principal",
+    "schoolName": "Apex Academy of Excellence",
+    "upiVpa": "apex@upi"
+  }'
 ```
+*(The bootstrap endpoint automatically permanently disables itself after first initialization).*
 
-*(Note: In production, the server will intentionally fail to start if `ADMIN_BOOTSTRAP_SECRET`, `FIREBASE_SERVICE_ACCOUNT_PATH`, or `ALLOWED_ORIGIN` is missing).*
+### Step 5: Install PWA Web App (5 mins)
+Open your deployed Firebase Hosting URL (`https://<project-id>.web.app`) on your smartphone or desktop and click **Install PWA** or **Add to Home Screen** for a native app experience!
 
-#### 5. Install & Configure Cloudflare Named Tunnel
-Cloudflare Tunnel allows you to securely expose port 3000 to the public internet with a free SSL certificate.
+---
 
-1. Install `cloudflared`:
-   ```bash
-   curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-   sudo dpkg -i cloudflared.deb
-   ```
-2. Authenticate and create a named tunnel:
-   ```bash
-   cloudflared tunnel login
-   cloudflared tunnel create tuition-backend
-   cloudflared tunnel route dns tuition-backend api.yourdomain.com
-   ```
-3. Run the named tunnel as a background service:
-   ```bash
-   cloudflared tunnel run tuition-backend &
-   ```
+## 👩‍🏫 Teacher User Guide
 
-#### 6. Start Backend Process with PM2 Ecosystem Config
-Start the server using `ecosystem.config.cjs` (configured with `script: "server.ts"`, `interpreter: "node_modules/.bin/tsx"`, and `env: { NODE_ENV: "production" }`):
+1. **Faculty Account Sign Up**: Choose **Teacher** during sign-up and enter the institution's active **Teacher Join Code** (`T-XXXXXX`).
+2. **Managing Batches & Schedule**:
+   - Navigate to **Batches / Classes** to create new subject batches, assign rooms, and update syllabus progress.
+   - View weekly timetable automatically generated in **Schedule Calendar**.
+3. **Daily Attendance Tracking**:
+   - Select batch date in **Mark Attendance**, toggle `PRESENT`/`ABSENT`, and click **Save Attendance**.
+   - Send 1-click absent alerts via **Send on WhatsApp** (`wa.me`) or FCM Push.
+4. **Fee Management & Approvals**:
+   - Generate fee invoices under **Fee Tracker**.
+   - Review pending student claims in **Fee Approvals**, verify submitted 12-digit UTR transaction numbers, and click **Approve Payment**.
+5. **Homework & Educational Resources**:
+   - Post assignments and share Google Drive / YouTube links in **Homework & Resources**.
+   - Grade student answer sheets and provide feedback directly in the app.
+6. **Data Exports**:
+   - In **School Management** > **Data Backups & CSV**, download client-side CSV files for Student Rosters, Attendance Ledgers, and Fee Invoices.
+
+---
+
+## 👨‍👩‍👧 Parent User Guide
+
+1. **Parent Registration & Child Linking**:
+   - Sign up as **Parent** and enter the 6-character **Parent Access Code** (`P-XXXXXX`) generated by your student.
+   - Once redeemed, your child's profile is securely linked to your account.
+2. **Multi-Child Progress View**:
+   - Switch between linked children using the active child selector in the top bar.
+3. **Attendance & Academic Reports**:
+   - Review daily attendance percentage, present/absent logs, and test score reports in real time.
+4. **Direct Zero-Cost UPI Fee Payment**:
+   - View outstanding tuition fees in **Fees & Invoices**.
+   - Click **Pay via UPI** to launch Google Pay, PhonePe, Paytm, or BHIM with pre-filled tuition VPA, or scan the QR code.
+   - Enter your 12-digit transaction UTR number to submit a payment claim for instant teacher approval.
+5. **Instant Communication**:
+   - Receive immediate in-app and push notifications for homework announcements, attendance alerts, and fee receipts.
+
+---
+
+## ⚙️ Process Management & Cron Backups
+
+### PM2 Commands
 ```bash
 pm2 start ecosystem.config.cjs
 pm2 save
 pm2 startup
 ```
-PM2 will monitor the process and automatically restart it on system reboot or unexpected crash!
 
-#### 7. Schedule Nightly Firestore Local Backups
-Set up a cron job to export local state and Firestore collections daily at 2:00 AM:
+### Nightly Automated Firestore Backups
+Schedule daily local state backups at 2:00 AM via crontab:
 ```bash
 crontab -e
 ```
-Add entry:
+Add:
 ```cron
 0 2 * * * /bin/bash /opt/tuition-server/scripts/backup-firestore.sh >> /var/log/tuition-backup.log 2>&1
 ```
 
 ---
 
-### Method B: Android Phone Setup (Termux)
-
-Turn any spare Android smartphone into a 24/7 tuition server:
-
-#### 1. Install Termux & Dependencies
-1. Install **Termux** from [F-Droid](https://f-droid.org/packages/com.termux/).
-2. Open Termux and update packages:
-   ```bash
-   pkg update && pkg upgrade -y
-   pkg install nodejs-lts git wget -y
-   npm install -g pm2
-   ```
-3. **Battery Optimization & Wake-Lock**:
-   - Prevent Android from sleeping the CPU:
-     ```bash
-     termux-wake-lock
-     ```
-   - Go to Android Settings > **Apps** > **Termux** > **Battery** and select **Unrestricted / Don't optimize battery usage**.
-
-#### 2. Setup Application
-```bash
-git clone <YOUR_REPOSITORY_URL> tuition-platform
-cd tuition-platform
-npm install
-```
-
-#### 3. Copy Firebase Service Account Key
-Copy your `serviceAccountKey.json` into `~/tuition-platform/serviceAccountKey.json`.
-
-#### 4. Configure `.env`
-```bash
-cat << 'EOF' > .env
-PORT=3000
-NODE_ENV=production
-ALLOWED_ORIGIN=*
-FIREBASE_SERVICE_ACCOUNT_PATH=./serviceAccountKey.json
-ADMIN_BOOTSTRAP_SECRET=my_secure_admin_pass
-EOF
-```
-
-#### 5. Install & Run Cloudflare Tunnel on Termux
-```bash
-pkg install cloudflared -y
-cloudflared tunnel --url http://localhost:3000
-```
-Note the generated `https://xxxx.trycloudflare.com` URL.
-
-#### 6. Start Server with PM2 Ecosystem Config
-```bash
-pm2 start ecosystem.config.cjs
-pm2 save
-pm2 startup
-```
-
----
-
-## 3. Client Integration (`VITE_API_BASE_URL`)
-
-When hosting the frontend on Firebase Hosting and running the backend via Cloudflare Tunnel:
-1. Set `VITE_API_BASE_URL` in your build environment or `.env`:
-   ```ini
-   VITE_API_BASE_URL=https://api.yourdomain.com
-   # or the TryCloudflare URL:
-   # VITE_API_BASE_URL=https://xxxx.trycloudflare.com
-   ```
-2. Build and deploy the client to Firebase Hosting:
-   ```bash
-   npm run build
-   firebase deploy --only hosting
-   ```
-Every client API request will automatically attach the user's Firebase ID token in the `Authorization: Bearer <token>` header, verified server-side by the self-hosted Express backend!
-
----
-
-## 4. Security Model & Resilience
+## 🔒 Security Model & Resilience
 
 1. **Authentication Token Verification**: Every endpoint strictly validates the client's Firebase Auth ID token using `admin.auth().verifyIdToken()`.
 2. **Strict Firestore Rules**: Clients can self-create accounts *only* as `STUDENT`. Role upgrades to `TEACHER` or `PARENT` are performed exclusively by the server via `firebase-admin`.
