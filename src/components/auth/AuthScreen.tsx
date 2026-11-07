@@ -18,6 +18,7 @@ import {
   RotateCcw,
   Trash2
 } from 'lucide-react';
+import { ThemeToggle } from '../common/ThemeToggle';
 
 interface AuthScreenProps {
   onSuccess?: () => void;
@@ -194,7 +195,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 dark:from-slate-950 dark:via-indigo-950 dark:to-slate-950 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 relative">
+      {/* Theme Toggle Button */}
+      <div className="absolute top-4 right-4 z-50">
+        <ThemeToggle showLabel={false} />
+      </div>
+
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         {/* Brand Header */}
         <div className="flex justify-center mb-3">
@@ -211,7 +217,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = () => {
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-xl">
-        <div className="bg-white/95 backdrop-blur-md py-8 px-6 sm:px-10 shadow-2xl rounded-2xl border border-slate-100">
+        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md py-8 px-6 sm:px-10 shadow-2xl rounded-2xl border border-slate-100 dark:border-slate-800 text-slate-900 dark:text-slate-100">
           {/* Sign In vs Sign Up Tabs */}
           <div className="flex border-b border-slate-200 mb-6">
             <button

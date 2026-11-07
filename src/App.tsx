@@ -1,10 +1,11 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, Profiler } from 'react';
 import { TuitionProvider, useTuition } from './context/TuitionContext';
 import { School, Loader2, LogOut } from 'lucide-react';
 import { OfflineIndicator } from './components/common/OfflineIndicator';
 import { PWAInstallButton } from './components/common/PWAInstallButton';
 import { BackendHealthBanner } from './components/common/BackendHealthBanner';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
+import { logComponentRender, DevPerfMonitorOverlay } from './components/common/DevPerfMonitor';
 
 const StudentAppRoot = lazy(() =>
   import('./components/student/StudentAppRoot').then((m) => ({ default: m.StudentAppRoot }))
@@ -42,8 +43,11 @@ const TuitionAppContainer: React.FC = () => {
     return (
       <Suspense fallback={<ScreenLoadingFallback />}>
         <BackendHealthBanner />
-        <AuthScreen />
+        <Profiler id="AuthScreen" onRender={logComponentRender}>
+          <AuthScreen />
+        </Profiler>
         <OfflineIndicator />
+        <DevPerfMonitorOverlay />
       </Suspense>
     );
   }
@@ -72,12 +76,25 @@ const TuitionAppContainer: React.FC = () => {
       </div>
 
       <OfflineIndicator />
+      <DevPerfMonitorOverlay />
 
       {/* Render Active App Root Lazy Loaded */}
       <Suspense fallback={<ScreenLoadingFallback />}>
-        {role === 'STUDENT' && <StudentAppRoot />}
-        {(role === 'TEACHER' || role === 'ADMIN') && <TeacherAppRoot />}
-        {role === 'PARENT' && <ParentAppRoot />}
+        {role === 'STUDENT' && (
+          <Profiler id="StudentAppRoot" onRender={logComponentRender}>
+            <StudentAppRoot />
+          </Profiler>
+        )}
+        {(role === 'TEACHER' || role === 'ADMIN') && (
+          <Profiler id="TeacherAppRoot" onRender={logComponentRender}>
+            <TeacherAppRoot />
+          </Profiler>
+        )}
+        {role === 'PARENT' && (
+          <Profiler id="ParentAppRoot" onRender={logComponentRender}>
+            <ParentAppRoot />
+          </Profiler>
+        )}
       </Suspense>
     </div>
   );

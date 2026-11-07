@@ -21,6 +21,7 @@ import {
   Keyboard
 } from 'lucide-react';
 import { useTuition } from '../../context/TuitionContext';
+import { ThemeToggle } from '../common/ThemeToggle';
 
 const StudentDashboardScreen = lazy(() =>
   import('./StudentDashboardScreen').then((m) => ({ default: m.StudentDashboardScreen }))
@@ -113,9 +114,9 @@ export const StudentAppRoot: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex flex-col">
+    <div className="min-h-screen bg-[#F8F9FA] dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-200">
       {/* TopAppBar with Android Material3 Color: #1E88E5 */}
-      <header className="bg-[#1E88E5] text-white shadow-md sticky top-0 z-40">
+      <header className="bg-[#1E88E5] dark:bg-slate-900 text-white shadow-md sticky top-0 z-40 border-b border-transparent dark:border-slate-800">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 shrink-0">
             <h1 className="text-lg sm:text-xl font-bold tracking-tight">{getScreenTitle()}</h1>
@@ -133,6 +134,9 @@ export const StudentAppRoot: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {/* Theme Toggle Button */}
+            <ThemeToggle />
+
             {/* Keyboard Shortcuts Cheat Sheet Button */}
             <button
               onClick={() => setShowShortcuts(true)}
@@ -202,41 +206,41 @@ export const StudentAppRoot: React.FC = () => {
 
       {/* Floating In-App Toast Notification Banner */}
       {latestNotificationToast && (
-        <div className="fixed top-20 right-4 sm:right-6 max-w-sm w-full z-50 bg-white rounded-2xl shadow-xl border border-blue-300 p-4 animate-in slide-in-from-top-3 duration-200 space-y-2">
+        <div className="fixed top-20 right-4 sm:right-6 max-w-sm w-full z-50 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-blue-300 dark:border-slate-700 p-4 animate-in slide-in-from-top-3 duration-200 space-y-2">
           <div className="flex items-start justify-between gap-2.5">
             <div className="flex items-start gap-2.5">
-              <span className="p-2 rounded-xl bg-blue-50 text-blue-700 shrink-0 mt-0.5 border border-blue-100">
+              <span className="p-2 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 shrink-0 mt-0.5 border border-blue-100 dark:border-blue-900">
                 <Bell className="w-4 h-4" />
               </span>
               <div className="space-y-0.5">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-100 text-blue-800 uppercase tracking-wide">
+                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 uppercase tracking-wide">
                     {latestNotificationToast.type === 'HOMEWORK_POSTED' ? 'New Assignment' : 'Shared Resource'}
                   </span>
                   <span className="text-[10px] text-slate-400 font-mono">Just now</span>
                 </div>
-                <h4 className="text-xs font-bold text-slate-900 leading-snug">
+                <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-snug">
                   {latestNotificationToast.title}
                 </h4>
-                <p className="text-[11px] text-slate-600 line-clamp-2">
+                <p className="text-[11px] text-slate-600 dark:text-slate-300 line-clamp-2">
                   {latestNotificationToast.message}
                 </p>
               </div>
             </div>
             <button
               onClick={dismissToast}
-              className="text-slate-400 hover:text-slate-700 text-sm p-1 leading-none cursor-pointer"
+              className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-sm p-1 leading-none cursor-pointer"
             >
               ✕
             </button>
           </div>
 
-          <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-xs">
+          <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800 text-xs">
             <span className="text-[11px] text-slate-400">By {latestNotificationToast.authorName}</span>
             <div className="flex items-center gap-2">
               <button
                 onClick={dismissToast}
-                className="px-2.5 py-1 text-slate-500 hover:text-slate-700 text-xs font-medium cursor-pointer"
+                className="px-2.5 py-1 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-xs font-medium cursor-pointer"
               >
                 Dismiss
               </button>
@@ -294,7 +298,7 @@ export const StudentAppRoot: React.FC = () => {
       />
 
       {/* Bottom NavigationBar */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40 shadow-lg">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 z-40 shadow-lg">
         <div className="max-w-xl mx-auto grid grid-cols-7 h-16">
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -304,12 +308,12 @@ export const StudentAppRoot: React.FC = () => {
                 key={item.key}
                 onClick={() => setSelectedScreen(item.key)}
                 className={`flex flex-col items-center justify-center gap-0.5 py-1 transition-colors cursor-pointer ${
-                  isSelected ? 'text-[#1E88E5]' : 'text-slate-500 hover:text-slate-800'
+                  isSelected ? 'text-[#1E88E5] dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
               >
                 <div
                   className={`p-1 rounded-full transition-transform ${
-                    isSelected ? 'bg-blue-50 scale-105' : ''
+                    isSelected ? 'bg-blue-50 dark:bg-blue-950/60 scale-105' : ''
                   }`}
                 >
                   <Icon className="w-5 h-5" />

@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { useTuition } from '../../context/TuitionContext';
 import { AlertTriangle } from 'lucide-react';
-import { DashboardSummary } from '../common/DashboardSummary';
+import { ListSkeleton } from '../common/ListSkeleton';
+
+const DashboardSummary = lazy(() => import('../common/DashboardSummary'));
 
 export const TeacherAnalyticsScreen: React.FC = () => {
   const { batches, attendanceRecords, assignments, feeRecords } = useTuition();
@@ -176,7 +178,9 @@ export const TeacherAnalyticsScreen: React.FC = () => {
       )}
 
       {/* Interactive Recharts Analytics & Visual Summary */}
-      <DashboardSummary />
+      <Suspense fallback={<ListSkeleton count={2} />}>
+        <DashboardSummary />
+      </Suspense>
 
       {/* Batch Performance Summary Table computed dynamically */}
       <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-2xs space-y-4">

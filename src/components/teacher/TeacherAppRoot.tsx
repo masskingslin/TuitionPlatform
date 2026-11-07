@@ -22,6 +22,7 @@ import {
   Keyboard
 } from 'lucide-react';
 import { useTuition } from '../../context/TuitionContext';
+import { ThemeToggle } from '../common/ThemeToggle';
 
 const TeacherBatchesScreen = lazy(() =>
   import('./TeacherBatchesScreen').then((m) => ({ default: m.TeacherBatchesScreen }))
@@ -127,9 +128,9 @@ export const TeacherAppRoot: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] flex flex-col">
+    <div className="min-h-screen bg-[#F4F6F8] dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-200">
       {/* TopAppBar with Android Material3 Color: #00695C */}
-      <header className="bg-[#00695C] text-white shadow-md sticky top-0 z-40">
+      <header className="bg-[#00695C] dark:bg-slate-900 text-white shadow-md sticky top-0 z-40 border-b border-transparent dark:border-slate-800">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 shrink-0">
             <h1 className="text-lg sm:text-xl font-bold tracking-tight">{getScreenTitle()}</h1>
@@ -147,6 +148,9 @@ export const TeacherAppRoot: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* Theme Toggle Button */}
+            <ThemeToggle />
+
             {/* Keyboard Shortcuts Cheat Sheet Button */}
             <button
               onClick={() => setShowShortcuts(true)}
@@ -231,7 +235,7 @@ export const TeacherAppRoot: React.FC = () => {
       />
 
       {/* Bottom NavigationBar */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40 shadow-lg">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 z-40 shadow-lg">
         <div className="max-w-3xl mx-auto flex items-center justify-around h-16 px-1 overflow-x-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -241,12 +245,12 @@ export const TeacherAppRoot: React.FC = () => {
                 key={item.key}
                 onClick={() => setSelectedScreen(item.key)}
                 className={`flex flex-col items-center justify-center gap-0.5 py-1 px-1.5 transition-colors cursor-pointer shrink-0 ${
-                  isSelected ? 'text-[#00695C]' : 'text-slate-500 hover:text-slate-800'
+                  isSelected ? 'text-[#00695C] dark:text-teal-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
               >
                 <div
                   className={`p-1 rounded-full transition-transform ${
-                    isSelected ? 'bg-teal-50 scale-105' : ''
+                    isSelected ? 'bg-teal-50 dark:bg-teal-950/60 scale-105' : ''
                   }`}
                 >
                   <Icon className="w-4 h-4 sm:w-5 sm:h-5" />

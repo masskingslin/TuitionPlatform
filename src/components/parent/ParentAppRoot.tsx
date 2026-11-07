@@ -26,6 +26,7 @@ import {
   LogOut,
   Keyboard
 } from 'lucide-react';
+import { ThemeToggle } from '../common/ThemeToggle';
 
 export const ParentAppRoot: React.FC = () => {
   const {
@@ -156,9 +157,9 @@ export const ParentAppRoot: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex flex-col">
+    <div className="min-h-screen bg-[#F8F9FA] dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-200">
       {/* TopAppBar with Parent Theme Color: Indigo/Slate #3949AB */}
-      <header className="bg-[#3949AB] text-white shadow-md sticky top-0 z-40">
+      <header className="bg-[#3949AB] dark:bg-slate-900 text-white shadow-md sticky top-0 z-40 border-b border-transparent dark:border-slate-800">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 shrink-0">
             <h1 className="text-lg sm:text-xl font-bold tracking-tight">Parent Portal</h1>
@@ -176,6 +177,9 @@ export const ParentAppRoot: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {/* Theme Toggle Button */}
+            <ThemeToggle />
+
             {/* Keyboard Shortcuts Cheat Sheet Button */}
             <button
               onClick={() => setShowShortcuts(true)}

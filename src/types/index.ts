@@ -31,6 +31,7 @@ export interface UserProfile {
   teacherId?: string;
   parentId?: string;
   linkedChildIds?: string[];
+  enrolledBatchIds?: string[];
   createdAt?: string;
 }
 

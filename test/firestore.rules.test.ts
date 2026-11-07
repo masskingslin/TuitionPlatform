@@ -284,5 +284,63 @@ describe('Firestore Security Rules - Security Hardening Suite', () => {
       );
     }
   });
+
+  // 7. Client Queries Rule-Compatibility Test
+  test('7. Exact client queries for STUDENT, PARENT and TEACHER access control', async () => {
+    if (testEnv) {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        const db = ctx.firestore();
+        // Setup Users
+        await db.collection('users').doc('stu_exact').set({
+          role: 'STUDENT',
+          studentId: 'stu_exact',
+          enrolledBatchIds: ['b1']
+        });
+        await db.collection('users').doc('par_exact').set({
+          role: 'PARENT',
+          parentId: 'par_exact',
+          linkedChildIds: ['stu_exact'],
+          enrolledBatchIds: ['b1']
+        });
+        await db.collection('users').doc('teach_exact').set({
+          role: 'TEACHER',
+          teacherId: 'teach_exact'
+        });
+
+        // Setup Batches & Assignments
+        await db.collection('batches').doc('b1').set({ title: 'Batch 1', studentIds: ['stu_exact'] });
+        await db.collection('batches').doc('b2_other').set({ title: 'Batch 2', studentIds: ['other_student'] });
+
+        await db.collection('assignments').doc('asg_b1').set({ batchId: 'b1', title: 'Task 1' });
+        await db.collection('assignments').doc('asg_b2').set({ batchId: 'b2_other', title: 'Task 2' });
+
+        await db.collection('fees').doc('fee_stu_exact').set({ invoiceId: 'fee_stu_exact', studentId: 'stu_exact', amountDue: 1500, amountPaid: 0, status: 'PENDING' });
+        await db.collection('fees').doc('fee_other').set({ invoiceId: 'fee_other', studentId: 'other_student', amountDue: 1500, amountPaid: 0, status: 'PENDING' });
+      });
+
+      const studentDb = testEnv.authenticatedContext('stu_exact').firestore();
+      const parentDb = testEnv.authenticatedContext('par_exact').firestore();
+      const teacherDb = testEnv.authenticatedContext('teach_exact').firestore();
+
+      // a. Student query with where('batchId', 'in', ['b1']) MUST SUCCEED
+      await assertSucceeds(studentDb.collection('assignments').where('batchId', 'in', ['b1']).get());
+
+      // b. Student cross-batch query where('batchId', 'in', ['b2_other']) MUST FAIL
+      await assertFails(studentDb.collection('assignments').where('batchId', 'in', ['b2_other']).get());
+
+      // c. Student unfiltered collection query collection('batches').get() MUST FAIL
+      await assertFails(studentDb.collection('batches').get());
+
+      // d. Parent querying linked child fees where('studentId', '==', 'stu_exact') MUST SUCCEED
+      await assertSucceeds(parentDb.collection('fees').where('studentId', '==', 'stu_exact').get());
+
+      // e. Parent querying unlinked child fees where('studentId', '==', 'other_student') MUST FAIL
+      await assertFails(parentDb.collection('fees').where('studentId', '==', 'other_student').get());
+
+      // f. Teacher running full queries MUST SUCCEED
+      await assertSucceeds(teacherDb.collection('batches').get());
+      await assertSucceeds(teacherDb.collection('assignments').limit(100).get());
+    }
+  });
 });
 
