@@ -14,9 +14,48 @@
     "test:endpoints": "vitest run test/server.endpoints.test.ts",
     "test:e2e": "playwright test",
     "preview": "vite preview --port 3000",
-    "start": "tsx server.ts"
+    "start": "tsx server.ts",
+    "android:sync": "npm run build && npx cap sync android",
+    "android:apk": "cd android && ./gradlew assembleRelease",
+    "compile:electron": "tsc -p tsconfig.electron.json",
+    "desktop:dev": "npm run build && npm run compile:electron && electron .",
+    "desktop:build": "npm run build && npm run compile:electron && electron-builder --win"
+  },
+  "main": "dist-electron/main.js",
+  "build": {
+    "appId": "com.dk.tuitionplatform",
+    "productName": "Apex Academy",
+    "directories": {
+      "output": "dist-desktop"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "publish": null
   },
   "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/browser": "^8.0.5",
+    "@capacitor/cli": "^8.6.0",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/push-notifications": "^8.1.3",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.4",
     "@types/cors": "^2.8.19",
     "@types/qrcode": "^1.5.6",
     "cors": "^2.8.6",
@@ -42,7 +81,10 @@
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
     "firebase-tools": "^15.35.0",
+    "png-to-ico": "^3.0.2",
     "tailwindcss": "^4.0.9",
     "typescript": "^5.7.3",
     "vite": "^6.2.0",

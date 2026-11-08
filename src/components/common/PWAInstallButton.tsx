@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
 import { Download, Smartphone, X } from 'lucide-react';
+import { isWeb } from '../../platform';
 
 export const PWAInstallButton: React.FC<{ className?: string }> = ({ className = '' }) => {
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
   const [showIOSGuide, setShowIOSGuide] = useState(false);
 
-  if (isInstalled) return null;
+  if (!isWeb() || isInstalled) return null;
 
   if (isInstallable) {
     return (

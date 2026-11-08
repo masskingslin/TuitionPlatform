@@ -68,8 +68,11 @@ curl -X POST https://<YOUR_BACKEND_URL>/api/bootstrapFirstAdmin \
 ```
 *(The bootstrap endpoint automatically permanently disables itself after first initialization).*
 
-### Step 5: Install PWA Web App (5 mins)
-Open your deployed Firebase Hosting URL (`https://<project-id>.web.app`) on your smartphone or desktop and click **Install PWA** or **Add to Home Screen** for a native app experience!
+### Step 5: Install Desktop & Mobile Apps (5 mins)
+- **Web PWA**: Open your deployed Firebase Hosting URL (`https://<project-id>.web.app`) on your smartphone or desktop and click **Install PWA**.
+- **Android APK**: Install `app-release.apk` compiled with `npm run android:apk` (see `docs/ANDROID.md`).
+- **Windows Desktop App**: Download the NSIS Installer (`Apex Academy Setup 1.0.0.exe`) or Portable Version (`Apex Academy 1.0.0.exe`) compiled with `npm run desktop:build` (see `docs/DESKTOP.md`).
+  > **Note for Unsigned Windows Apps**: When running the `.exe` for the first time, Windows SmartScreen may show *"Windows protected your PC"*. Click **"More info"** and then **"Run anyway"** to launch.
 
 ---
 

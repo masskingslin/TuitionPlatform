@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTuition } from '../../context/TuitionContext';
 import { buildUpiDeepLink, generateUpiQrDataUrl } from '../../utils/upiQr';
+import { openExternalUrl } from '../../platform';
 import {
   ShieldCheck,
   QrCode,
@@ -234,14 +235,15 @@ export const UpiQrPaymentModal: React.FC<UpiQrPaymentModalProps> = ({
                 </div>
 
                 {/* Deep Link Button for Mobile Users */}
-                <a
-                  href={upiDeepLink}
-                  className="w-full py-2.5 px-4 bg-[#00695C] hover:bg-[#005a4e] text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2"
+                <button
+                  type="button"
+                  onClick={() => openExternalUrl(upiDeepLink)}
+                  className="w-full py-2.5 px-4 bg-[#00695C] hover:bg-[#005a4e] text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Smartphone className="w-4 h-4" />
                   <span>Open in UPI App (GPay, PhonePe, Paytm)</span>
                   <ExternalLink className="w-3.5 h-3.5" />
-                </a>
+                </button>
               </div>
 
               {/* UTR Submission Form */}

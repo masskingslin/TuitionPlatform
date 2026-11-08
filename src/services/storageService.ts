@@ -42,15 +42,15 @@ export function isValidHttpsUrl(urlString: string): boolean {
   return validateHttpsUrl(urlString).valid;
 }
 
+import { openExternalUrl } from '../platform';
+
 /**
- * Safely opens an external HTTPS document or media resource in a new tab
+ * Safely opens an external HTTPS document or media resource
  */
 export function openExternalLink(url: string): void {
   if (!url) return;
   const targetUrl = url.trim();
-  if (targetUrl.startsWith('https://')) {
-    window.open(targetUrl, '_blank', 'noopener,noreferrer');
-  }
+  openExternalUrl(targetUrl);
 }
 
 /**

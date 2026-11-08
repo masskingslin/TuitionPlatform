@@ -4,6 +4,7 @@ import { app, db } from '../firebase';
 import { NotificationLog } from '../types';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { fetchWithAuth } from './apiClient';
+import { isWeb } from '../platform';
 
 export interface FcmPushParams {
   title: string;
@@ -45,7 +46,7 @@ export async function getFcmMessagingInstance() {
  * Returns null if messaging is unavailable or permission denied.
  */
 export async function requestFcmToken(): Promise<string | null> {
-  if (typeof window === 'undefined' || !('Notification' in window)) {
+  if (!isWeb() || typeof window === 'undefined' || !('Notification' in window)) {
     return null;
   }
 

@@ -633,7 +633,7 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       );
     }
 
-    // 10. Notifications - Query with recipient/role constraints + limit(30)
+    // 10. Notifications - Query with targetRole listener + second listener for where('userId', '==', uid), merged and deduped by id
     if (isTeacherOrAdmin) {
       unsubs.push(
         onSnapshot(
@@ -645,15 +645,45 @@ export const TuitionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         )
       );
     } else {
+      let roleNotifs: StudentNotification[] = [];
+      let userNotifs: StudentNotification[] = [];
+
+      const mergeNotifications = () => {
+        const notifMap = new Map<string, StudentNotification>();
+        for (const item of roleNotifs) {
+          notifMap.set(item.id, item);
+        }
+        for (const item of userNotifs) {
+          notifMap.set(item.id, item);
+        }
+        setNotifications(Array.from(notifMap.values()));
+      };
+
+      // Listener 1: targetRole
       unsubs.push(
         onSnapshot(
           query(collection(db, 'notifications'), where('targetRole', 'in', ['ALL', userProfile?.role || 'STUDENT']), limit(30)),
           (snap) => {
-            setNotifications(snap.docs.map((d) => ({ id: d.id, ...d.data() } as StudentNotification)));
+            roleNotifs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as StudentNotification));
+            mergeNotifications();
           },
           (err) => handleFirestoreError(err, OperationType.GET, 'notifications')
         )
       );
+
+      // Listener 2: userId == uid
+      if (currentUser?.uid) {
+        unsubs.push(
+          onSnapshot(
+            query(collection(db, 'notifications'), where('userId', '==', currentUser.uid), limit(30)),
+            (snap) => {
+              userNotifs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as StudentNotification));
+              mergeNotifications();
+            },
+            (err) => handleFirestoreError(err, OperationType.GET, 'notifications')
+          )
+        );
+      }
     }
 
     // 11. Rooms - Static infrastructure

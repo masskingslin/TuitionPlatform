@@ -19,6 +19,7 @@ import {
   RotateCcw,
   Sparkles
 } from 'lucide-react';
+import { openExternalUrl } from '../../platform';
 
 interface ResourcePreviewModalProps {
   resource: EducationalResource | null;
@@ -770,15 +771,14 @@ export const ResourcePreviewModal: React.FC<ResourcePreviewModalProps> = ({
             {/* Launch or download real file */}
             {resource.fileUrl ? (
               <>
-                <a
-                  href={resource.fileUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
+                  onClick={() => openExternalUrl(resource.fileUrl!)}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold rounded-lg shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
                   <span>Open Real File</span>
-                </a>
+                </button>
                 <button
                   type="button"
                   onClick={() => downloadFile(resource.fileUrl!, resource.fileName || resource.urlOrFilename)}
@@ -789,15 +789,14 @@ export const ResourcePreviewModal: React.FC<ResourcePreviewModalProps> = ({
                 </button>
               </>
             ) : isWebUrl ? (
-              <a
-                href={getCleanUrl(resource.urlOrFilename)}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={() => openExternalUrl(getCleanUrl(resource.urlOrFilename))}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold rounded-lg shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
                 <span>Launch in Tab</span>
-              </a>
+              </button>
             ) : (
               <button
                 type="button"

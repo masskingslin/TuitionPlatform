@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, Profiler } from 'react';
+import React, { Suspense, lazy, Profiler, useEffect } from 'react';
 import { TuitionProvider, useTuition } from './context/TuitionContext';
 import { School, Loader2, LogOut } from 'lucide-react';
 import { OfflineIndicator } from './components/common/OfflineIndicator';
@@ -6,6 +6,7 @@ import { PWAInstallButton } from './components/common/PWAInstallButton';
 import { BackendHealthBanner } from './components/common/BackendHealthBanner';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { logComponentRender, DevPerfMonitorOverlay } from './components/common/DevPerfMonitor';
+import { initNativeAppListeners, setupNativePushNotifications } from './services/nativeService';
 
 const StudentAppRoot = lazy(() =>
   import('./components/student/StudentAppRoot').then((m) => ({ default: m.StudentAppRoot }))
@@ -34,6 +35,16 @@ const ScreenLoadingFallback: React.FC = () => (
 
 const TuitionAppContainer: React.FC = () => {
   const { role, currentUser, userProfile, authLoading, logout } = useTuition();
+
+  useEffect(() => {
+    initNativeAppListeners();
+  }, []);
+
+  useEffect(() => {
+    if (currentUser?.uid) {
+      setupNativePushNotifications(currentUser.uid);
+    }
+  }, [currentUser?.uid]);
 
   if (authLoading) {
     return <ScreenLoadingFallback />;

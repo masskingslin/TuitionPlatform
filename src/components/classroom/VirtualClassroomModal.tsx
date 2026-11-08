@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CourseBatch } from '../../types';
 import { useTuition } from '../../context/TuitionContext';
+import { openExternalUrl } from '../../platform';
 import {
   X,
   ExternalLink,
@@ -66,7 +67,7 @@ export const VirtualClassroomModal: React.FC<VirtualClassroomModalProps> = ({
   };
 
   const handleOpenExternal = () => {
-    window.open(externalMeetingUrl, '_blank', 'noopener,noreferrer');
+    openExternalUrl(externalMeetingUrl);
   };
 
   return (

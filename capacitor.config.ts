@@ -1,0 +1,29 @@
+import type { CapacitorConfig } from '@capacitor/cli';
+
+const config: CapacitorConfig = {
+  appId: 'com.dk.tuitionplatform',
+  appName: 'Apex Academy',
+  webDir: 'dist',
+  server: {
+    androidScheme: 'https',
+    cleartext: true
+  },
+  plugins: {
+    SplashScreen: {
+      launchShowDuration: 2000,
+      launchAutoHide: true,
+      backgroundColor: '#00695C',
+      androidSplashResourceName: 'splash',
+      showSpinner: false
+    },
+    StatusBar: {
+      style: 'DARK',
+      backgroundColor: '#00695C'
+    },
+    PushNotifications: {
+      presentationOptions: ['badge', 'sound', 'alert']
+    }
+  }
+};
+
+export default config;

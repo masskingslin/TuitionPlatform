@@ -42,6 +42,7 @@ export function buildWhatsAppClickToChatUrl(phone: string, messageText: string):
   const cleanPhone = formatPhoneNumberForWhatsApp(phone);
   return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(messageText.trim())}`;
 }
+import { openExternalUrl } from '../platform';
 
 /**
  * Opens WhatsApp Click-to-Chat in a new window/tab and records a log entry in Firestore
@@ -58,9 +59,7 @@ export async function openWhatsAppClickToChat(
   }
 ): Promise<void> {
   const url = buildWhatsAppClickToChatUrl(phone, messageText);
-  if (typeof window !== 'undefined') {
-    window.open(url, '_blank', 'noopener,noreferrer');
-  }
+  openExternalUrl(url);
 
   // Log to notification_logs in Firestore
   try {

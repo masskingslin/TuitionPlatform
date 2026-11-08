@@ -17,12 +17,38 @@ export const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 
 // 2. Allowed Origins Configuration
-const allowedOriginEnv = process.env.ALLOWED_ORIGIN;
+// ALLOWED_ORIGIN accepts a comma-separated list.
+// Defaults to include web origin plus https://localhost, capacitor://localhost and app://tuition for Android & Windows apps
+const defaultWrapperOrigins = ['https://localhost', 'capacitor://localhost', 'app://tuition'];
+
+export function getAllowedCorsOrigins(): string[] | boolean {
+  const envOrigins = process.env.ALLOWED_ORIGIN
+    ? process.env.ALLOWED_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean)
+    : [];
+
+  if (envOrigins.length > 0) {
+    return Array.from(new Set([...envOrigins, ...defaultWrapperOrigins]));
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    return defaultWrapperOrigins;
+  }
+
+  return true;
+}
+
 app.use(
   cors({
-    origin: allowedOriginEnv
-      ? allowedOriginEnv.split(',').map((o) => o.trim())
-      : (process.env.NODE_ENV === 'production' ? false : true),
+    origin: (origin, callback) => {
+      const allowed = getAllowedCorsOrigins();
+      if (typeof allowed === 'boolean') {
+        return callback(null, allowed);
+      }
+      if (!origin || allowed.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(null, false);
+    },
     credentials: true
   })
 );

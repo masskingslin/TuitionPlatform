@@ -35,14 +35,23 @@ describe('Zero-Cost Backend Endpoints Suite (server.ts)', () => {
   const parentToken = 'Bearer test_token_parent_77:parent77@apex.edu:PARENT:Parent User';
   const adminToken = 'Bearer test_token_admin_00:admin00@apex.edu:ADMIN:Administrator';
 
-  // 0. Health Check Endpoint
-  test('0. GET /health returns 200 OK and uptime metadata', async () => {
+  // 0. Health Check & CORS Endpoints
+  test('0. GET /health returns 200 OK and CORS allows web and native wrapper origins', async () => {
     const res = await fetch(`${baseUrl}/health`);
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.status).toBe('ok');
     expect(json.service).toBe('tuition-platform-backend');
     expect(typeof json.uptime).toBe('number');
+
+    // Test CORS origin preflight headers for native wrappers
+    const nativeOrigins = ['https://localhost', 'capacitor://localhost', 'app://tuition'];
+    for (const origin of nativeOrigins) {
+      const corsRes = await fetch(`${baseUrl}/health`, {
+        headers: { Origin: origin }
+      });
+      expect(corsRes.headers.get('access-control-allow-origin')).toBe(origin);
+    }
   });
 
   // 1. Authentication Middleware Enforcement

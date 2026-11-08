@@ -35,17 +35,8 @@ export interface JoinSchoolResult {
   error?: string;
 }
 
-/**
- * Returns the configured backend API base URL from VITE_API_BASE_URL.
- * If not set or empty, defaults to same-origin relative paths (e.g. for self-hosted dev/prod).
- */
-export function getApiBaseUrl(): string {
-  const envUrl = import.meta.env.VITE_API_BASE_URL;
-  if (envUrl && typeof envUrl === 'string') {
-    return envUrl.trim().replace(/\/$/, '');
-  }
-  return '';
-}
+import { getApiBaseUrl } from '../platform';
+export { getApiBaseUrl };
 
 /**
  * Makes an authenticated HTTP request to the self-hosted Express backend.
