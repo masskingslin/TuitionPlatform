@@ -29,21 +29,38 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Run Tests
+      - name: Type check and unit tests
         run: |
           npm run lint
-          npm run test:unit
+          npx vitest run test/platform.test.ts
+
+      - name: Generate Android icons from assets/
+        run: npx --yes @capacitor/assets generate --android --assetPath assets
 
       - name: Inject Firebase google-services.json
-        if: ${{ secrets.GOOGLE_SERVICES_JSON != '' }}
-        run: echo "${{ secrets.GOOGLE_SERVICES_JSON }}" > android/app/google-services.json
+        env:
+          GSJ: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GSJ" ]; then
+            printf '%s' "$GSJ" > android/app/google-services.json
+          else
+            echo "::warning::GOOGLE_SERVICES_JSON secret not set - push notifications disabled in this build"
+          fi
 
       - name: Write Android Release Keystore
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > tuition-release.jks
+          if [ -z "$KS" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 secret is missing. Add the keystore secrets before building a release."
+            exit 1
+          fi
+          printf '%s' "$KS" | base64 -d > tuition-release.jks
 
-      - name: Sync & Build Android Release APK
+      - name: Make Gradle wrapper executable
+        run: chmod +x android/gradlew
+
+      - name: Sync and Build Android Release APK
         run: |
           npm run android:sync
           npm run android:apk
@@ -76,18 +93,21 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Run Tests
+      - name: Type check and unit tests
         run: |
           npm run lint
-          npm run test:unit
+          npx vitest run test/platform.test.ts
 
-      - name: Build Web Application
-        run: npm run build
+      - name: Generate Windows icon from assets/
+        shell: bash
+        run: |
+          mkdir -p build
+          npx --yes png-to-ico assets/icon-256.png > build/icon.ico
+
+      - name: Build Windows Executables (NSIS and Portable)
+        run: npm run desktop:build
         env:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
-
-      - name: Build Windows Executables (NSIS & Portable)
-        run: npm run desktop:build
 
       - name: Upload Windows Executables Artifact
         uses: actions/upload-artifact@v4
@@ -100,6 +120,8 @@ jobs:
     name: Create GitHub Release
     needs: [android, windows]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -119,8 +141,8 @@ jobs:
       - name: Prepare Release Files
         run: |
           mkdir -p output-files
-          cp release-assets/android/app-release.apk output-files/ApexAcademy-Android.apk 2>/dev/null || true
-          cp release-assets/windows/*.exe output-files/ 2>/dev/null || true
+          cp release-assets/android/app-release.apk output-files/ApexAcademy-Android.apk
+          cp release-assets/windows/*.exe output-files/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
